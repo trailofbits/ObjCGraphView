@@ -1,27 +1,20 @@
 from .types import define_types_plugin
+from .class_t import Class
 
-from binaryninja import log_info, log_error, Type, BinaryView, Symbol, SymbolType, Structure, StructureType
+from binaryninja import log_info, log_error, Type, BinaryView, Symbol, SymbolType, Structure, StructureType, Endianness
 
 
 def define_classes_plugin(view):
     log_info("define_classes_plugin")
 
-    class_t = view.types.get('class_t')
-
-    if class_t is None:
-        define_types_plugin(view)
+    define_types_plugin(view)
 
     class_t = Type.named_type_from_type('class_t', view.types.get('class_t'))
 
-    # Try it one more time...
+    _define_classes(view, class_t)
+
     if class_t is None:
         log_error("class_t is not defined!")
-        return
-
-    try:
-        _define_classes(view, class_t)
-    except Exception as e:
-        log_error(f'{e!s}')
         return
 
 
@@ -55,179 +48,59 @@ def _define_classes(view, class_t):
 
     for addr in range(__objc_data.start, __objc_data.end, class_t.width):
         log_info(f"defining {addr:x}")
-        view.define_user_data_var(addr, class_t)
+        current_class = Class.from_address(addr, view)
+        current_class.define_type()
+        current_class.define_symbol()
 
-        isa_ptr = int.from_bytes(
-            view.read(addr + isa.offset, view.address_size),
-            "little"
-        )
+        _define_class_members(view, current_class)
 
-        name = _define_class_members(view, addr, vtable, isa_ptr, class_ro_t, **class_ro_t_members)
-
-        log_info(f"name is {name}")
-
-        if name:
-            view.define_user_symbol(Symbol(SymbolType.DataSymbol, addr, name))
+        log_info(f"name is {current_class.vtable.name}")
 
 
-def _define_class_members(view: BinaryView, addr, vtable, isa_ptr, class_ro_t, **class_ro_t_members):
-    instance_size = class_ro_t_members['instanceSize']
-    base_methods = class_ro_t_members['baseMethods']
-    ivars = class_ro_t_members['ivars']
-    base_properties = class_ro_t_members['baseProperties']
-    name = class_ro_t_members['name']
+def _define_class_members(view: BinaryView, class_: Class):
 
-    vtable_ptr = int.from_bytes(
-        view.read(addr + vtable.offset, view.address_size),
-        "little"
-    )
+    class_ro_t = Type.named_type_from_type('class_ro_t', view.types['class_ro_t'])
 
-    if vtable_ptr:
-        view.define_user_data_var(vtable_ptr, class_ro_t)
-
-        name_ptr = int.from_bytes(
-            view.read(vtable_ptr + name.offset, view.address_size),
-            "little"
-        )
-
-        if name_ptr:
-            class_name = view.get_ascii_string_at(name_ptr, 3)
-        else:
-            class_name = None
-
-        if isa_ptr and class_name is not None:
-            name = f'_OBJC_CLASS_$_{class_name.value}'
-        elif not isa_ptr and class_name is not None:
-            name = f'_OBJC_METACLASS_$_{class_name.value}'
-        else:
-            name = None
-
-        method_list_addr = int.from_bytes(
-            view.read(
-                vtable_ptr + base_methods.offset,
-                base_methods.type.width
-            ),
-            "little"
-        )
-
-        ivar_list_addr = int.from_bytes(
-            view.read(
-                vtable_ptr + ivars.offset,
-                ivars.type.width
-            ),
-            "little"
-        )
-
-        property_list_addr = int.from_bytes(
-            view.read(
-                vtable_ptr + base_properties.offset,
-                base_properties.type.width
-            ),
-            "little"
-        )
-
-        instance_size = int.from_bytes(
-            view.read(
-                vtable_ptr + instance_size.offset,
-                instance_size.type.width
-            ),
-            "little"
-        )
-
-        if method_list_addr:
-            _define_methods(view, class_name.value, method_list_addr)
+    if class_.vtable.address:
+        view.define_user_data_var(class_.vtable.address, class_ro_t)
 
         ivar_list = None
-        if ivar_list_addr:
-            ivars_start, ivar_count = _define_ivars(view, ivar_list_addr, name)
-            ivar_list = _get_ivars(view, ivars_start, ivar_count)
+        if class_.vtable.ivars:
+            ivars_start, ivar_count = _define_ivars(
+                view, class_
+            )
+            class_.vtable.ivars = _get_ivars(view, ivars_start, ivar_count)
 
-        if property_list_addr:
-            _define_properties(view, property_list_addr)
+        if not class_.is_meta:
+            _define_type(view, class_)
 
-        if ivar_list:
-            _define_type(view, class_name.value, instance_size, ivar_list)
+        if class_.vtable.baseMethods:
+            class_.define_methods()
 
-        return name
+        # if property_list_addr:
+        #     _define_properties(view, property_list_addr)
+            
 
-
-def _define_methods(view, class_name, method_list_addr):
-    log_info(f"_define_methods(view, {method_list_addr:x})")
-    method_list_t_type = view.types['method_list_t']
-
-    count = next(
-        m for m in method_list_t_type.structure.members if m.name == 'count')
-
-    method_count = int.from_bytes(
-        view.read(method_list_addr + count.offset, count.type.width),
-        "little"
-    )
-
-    method_list_t = Type.named_type_from_type(
-        'method_list_t', method_list_t_type)
-
-    view.define_user_data_var(method_list_addr, method_list_t)
-
-    methods_start = method_list_addr + method_list_t_type.width
-
-    method_t_type = view.types['method_t']
-
-    method_t = Type.named_type_from_type(
-        'method_t',
-        method_t_type
-    )
-
-    method_t_members = {m.name: m for m in method_t_type.structure.members}
-
-    name = method_t_members['name']
-    imp = method_t_members['imp']
-
-    view.define_user_data_var(
-        methods_start,
-        Type.array(
-            method_t,
-            method_count
-        )
-    )
-
-    start = methods_start
-    end = methods_start + method_count * method_t_type.width
-    step = method_t_type.width
-    for method_addr in range(start, end, step):
-        imp_ptr = int.from_bytes(
-            view.read(method_addr+imp.offset, view.address_size),
-            "little"
-        )
-
-        name_ptr = int.from_bytes(
-            view.read(method_addr + name.offset, view.address_size),
-            "little"
-        )
-
-        method_name = view.get_ascii_string_at(name_ptr, 2)
-        if method_name is not None:
-            method_name = f'-[{class_name} {method_name.value}]'
-
-            view.define_user_symbol(Symbol(SymbolType.FunctionSymbol, imp_ptr, method_name))
-
-def _define_ivars(view, ivar_list_addr, name):
-    log_info(f"_define_ivars(view, {ivar_list_addr:x})")
+def _define_ivars(view, class_):
+    log_info(f"_define_ivars(view, {class_.vtable.ivars:x})")
     ivar_list_t_type = view.types['ivar_list_t']
 
     count = next(
         m for m in ivar_list_t_type.structure.members if m.name == 'count')
 
     ivar_count = int.from_bytes(
-        view.read(ivar_list_addr + count.offset, count.type.width),
+        view.read(class_.vtable.ivars + count.offset, count.type.width),
         "little"
     )
 
     ivar_list_t = Type.named_type_from_type('ivar_list_t', ivar_list_t_type)
 
-    view.define_user_data_var(ivar_list_addr, ivar_list_t)
-    view.define_user_symbol(Symbol(SymbolType.DataSymbol, ivar_list_addr, f'{name}_IVARS'))
+    view.define_user_data_var(class_.vtable.ivars, ivar_list_t)
+    view.define_user_symbol(
+        Symbol(SymbolType.DataSymbol, class_.vtable.ivars, f'{class_.vtable.name}_IVARS')
+    )
 
-    ivars_start = ivar_list_addr + ivar_list_t_type.width
+    ivars_start = class_.vtable.ivars + ivar_list_t_type.width
 
     ivar_t = Type.named_type_from_type(
         'ivar_t',
@@ -241,6 +114,31 @@ def _define_ivars(view, ivar_list_addr, name):
             ivar_count
         )
     )
+
+    ivar_offset_type = Type.int(view.address_size, False)
+    ivar_offset_type.const = True
+
+    for ivar in range(ivars_start, ivars_start + ivar_count * ivar_t.width, ivar_t.width):
+        members = { 
+            m.name: int.from_bytes(
+                view.read(ivar + m.offset, m.type.width),
+                "little" if view.endianness is Endianness.LittleEndian else "big"
+            )
+            for m in view.types['ivar_t'].structure.members
+        }
+
+        name = view.get_ascii_string_at(members['name'], 1).value
+
+        view.define_user_symbol(
+            Symbol(
+                SymbolType.DataSymbol,
+                members['offset'],
+                f'{name}_offset',
+                namespace=class_.vtable.name
+            )
+        )
+
+        view.define_user_data_var(members['offset'], ivar_offset_type)
 
     return ivars_start, ivar_count
 
@@ -316,21 +214,35 @@ def _define_properties(view, property_list_addr):
         )
     )
 
-def _define_type(view: BinaryView, name, size, ivars):
-    log_info(f"_define_type(view, {name}, {size}, {len(ivars)})")
+def _define_type(view: BinaryView, class_: Class):
+    log_info(f"_define_type(view, {class_.vtable.name})")
 
     structure = Structure()
     structure.type = StructureType.ClassStructureType
+    structure.width = class_.vtable.instanceSize
+
+    print(f'instanceStart: {class_.vtable.instanceStart:x} instanceSize: {class_.vtable.instanceSize:x}')
 
     structure.insert(0, Type.pointer(view.arch, Type.void()), 'isa')
 
-    for ivar in ivars:
-        type_ = _lookup_type(ivar[2])
-        if type_ is None:
-            type_ = Type.pointer(view.arch, Type.void())
-        structure.insert(ivar[1], type_, ivar[0])
+    classes = [class_]
+    current_superclass = class_.superclass
+    while current_superclass:
+        classes.append(current_superclass)
+        current_superclass = current_superclass.superclass
 
-    view.define_user_type(name, Type.structure_type(structure))
+    while classes:
+        current_class = classes.pop()
+        if current_class.vtable.ivars == 0:
+            continue
+
+        for ivar in current_class.vtable.ivars:
+            type_ = _lookup_type(ivar[2])
+            if type_ is None:
+                type_ = Type.pointer(view.arch, Type.void())
+            structure.insert(ivar[1], type_, ivar[0])
+
+    view.define_user_type(class_.vtable.name, Type.structure_type(structure))
 
 basic_types = {
     'c': Type.char(),
@@ -338,9 +250,10 @@ basic_types = {
 }
 
 def _lookup_type(type_string):
-    print(type_string)
+    # print(type_string)
     if type_string in basic_types:
         return basic_types[type_string]
 
-    elif type_string.startswith('@'):
-        print(type_string.replace('@', '').replace('"', ''))
+    # elif type_string.startswith('@'):
+    #     pass
+    #     # print(type_string.replace('@', '').replace('"', ''))

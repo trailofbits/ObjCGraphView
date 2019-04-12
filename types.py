@@ -38,7 +38,7 @@ struct method_t
 
 struct method_list_t
 {
-    uint32_t entsize_NEVER_USE;
+    uint32_t entsize;
     uint32_t count;
     struct method_t first[0];
 };
