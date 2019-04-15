@@ -1,3 +1,5 @@
+from binaryninja import Type
+
 _objc_types = '''
 struct CFString
 {
@@ -104,6 +106,23 @@ struct class_t
     struct class_ro_t* vtable;
 };
 '''
+
+basic_types = {
+    'c': Type.char(),
+    'i': Type.int(4, True),
+    's': Type.int(2, True),
+    'l': Type.int(4, True),
+    'q': Type.int(8, True),
+    'C': Type.int(1, False),
+    'I': Type.int(4, False),
+    'S': Type.int(2, False),
+    'L': Type.int(4, False),
+    'Q': Type.int(8, False),
+    'f': Type.float(4),
+    'd': Type.float(8),
+    'B': Type.bool(),
+    'v': Type.void()
+}
 
 def define_types_plugin(view):
     objc_types = view.platform.parse_types_from_source(_objc_types)

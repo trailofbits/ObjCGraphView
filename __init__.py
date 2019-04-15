@@ -3,8 +3,10 @@ from .selectors import define_selectors_plugin
 from .cfstring import define_cfstrings_plugin
 from .types import define_types_plugin
 from .classes import define_classes_plugin
+from .objcgraph import ObjcFlowGraphViewType
 
 from binaryninja import PluginCommand
+from binaryninjaui import ViewType
 
 # ObjcView.register()
 
@@ -48,3 +50,5 @@ PluginCommand.register(
     _run_all_plugins,
     is_valid=lambda v: '__objc_data' in v.sections
 )
+
+ViewType.registerViewType(ObjcFlowGraphViewType())
