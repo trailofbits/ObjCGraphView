@@ -305,7 +305,7 @@ class ObjcFlowGraphViewType(ViewType):
 		super().__init__("Objc Graph", "Objective-C Graph View")
 
 	def getPriority(self, data, filename):
-		if data.executable:
+		if data.executable and 'class_t' in data.types:
 			# Use low priority so that this view is not picked by default
 			return 1
 		return 0
