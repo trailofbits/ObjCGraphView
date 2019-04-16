@@ -1,6 +1,6 @@
 from binaryninja import (DataRenderer, DisassemblyTextLine,
                          InstructionTextToken, InstructionTextTokenType,
-                         log_info, Type)
+                         log_info, Type, BinaryView)
 
 _cfstring_definition = '''
 struct CFString
@@ -13,7 +13,7 @@ struct CFString
 '''
 
 
-def define_cfstrings_plugin(view):
+def define_cfstrings_plugin(view: BinaryView):
     log_info("define_cfstrings_plugin")
     cfstring_type = view.types.get('CFString')
     if cfstring_type is None:
@@ -32,6 +32,9 @@ def define_cfstrings_plugin(view):
 
     for addr in range(__cfstring.start, __cfstring.end, cfstring_type.width):
         view.define_user_data_var(addr, cfstring)
+
+        for xref in view.get_data_refs(addr):
+            view.define_user_data_var(xref, Type.pointer(view.arch, cfstring))
         
         string_pointer = int.from_bytes(
             view.read(addr + buffer.offset, buffer.type.width),
