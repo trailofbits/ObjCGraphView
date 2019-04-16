@@ -1,7 +1,8 @@
-from binaryninja import FlowGraph, FlowGraphNode, DisassemblyTextRenderer, Function, InstructionTextToken, InstructionTextTokenType, MediumLevelILOperation, TypeClass, Variable
+from binaryninja import DisassemblySettings, FlowGraph, FlowGraphNode, DisassemblyTextRenderer, Function, InstructionTextToken, InstructionTextTokenType, MediumLevelILOperation, TypeClass, Variable, log_debug
 from binaryninjaui import FlowGraphWidget, ViewType
 from .class_t import Class
 import re
+from itertools import takewhile
 
 class ObjcFlowgraph(FlowGraph):
     def __init__(self, function):
@@ -22,7 +23,9 @@ class ObjcFlowgraph(FlowGraph):
 
         method_t = self.view.types['method_t']
         
-        renderer = DisassemblyTextRenderer(mlil)
+        settings = DisassemblySettings()
+        settings.set_option('ShowVariableTypesWhenAssigned')
+        renderer = DisassemblyTextRenderer(mlil, settings)
 
         nodes = {}
         for block in mlil:
@@ -79,8 +82,6 @@ class ObjcFlowgraph(FlowGraph):
                             class_name = None
 
                         class_ = Class.classes.get(class_name)
-                        if class_:
-                            print(f"{class_.vtable.baseMethods:x}")
 
                         if i.params[1].operation in (MediumLevelILOperation.MLIL_CONST, MediumLevelILOperation.MLIL_CONST_PTR):
                             selector = i.params[1].constant
@@ -108,11 +109,13 @@ class ObjcFlowgraph(FlowGraph):
 
                         if ':' in method_string:
                             params = i.params[2:]
-                            method_params = [x for x in method_string.split(':') if x]
+                            method_params = method_string.split(':')
+                            if len(method_params) > method_string.count(':'):
+                                method_params = method_params[:method_string.count(':')]
 
                             if len(params) > len(method_params):
                                 # some parameters are on the stack instead of registers
-                                pass
+                                log_debug(f"len(params) > len(method_params) for {method_ptr} at {i}")
 
                             for p in range(min(len(params), len(method_params))):
                                 if params[p].operation == MediumLevelILOperation.MLIL_VAR:
@@ -125,13 +128,11 @@ class ObjcFlowgraph(FlowGraph):
                                         )
                                     )
                                 else:
+                                    tokens = []
+                                    renderer.add_integer_token(tokens, params[p].tokens[0], i.address)
                                     method_params[p] = (
                                         method_params[p],
-                                        InstructionTextToken(
-                                            InstructionTextTokenType.PossibleAddressToken,
-                                            hex(params[p].constant),
-                                            params[p].constant
-                                        )
+                                        tokens[0]
                                     )
                                 
                             if len(params) < len(method_params):
@@ -159,34 +160,25 @@ class ObjcFlowgraph(FlowGraph):
                                     raise NotImplementedError('too many args for now')
                         else:
                             method_params = []
-                            
-                        call_line.tokens = []
 
                         if i.operation in (MediumLevelILOperation.MLIL_CALL, MediumLevelILOperation.MLIL_CALL_UNTYPED):
                             if i.output:
-                                for v in i.output:
-                                    call_line.tokens += [
-                                        InstructionTextToken(
-                                            InstructionTextTokenType.LocalVariableToken,
-                                            v.name,
-                                            v.identifier
-                                        ),
-                                        InstructionTextToken(
-                                            InstructionTextTokenType.TextToken,
-                                            ", "
-                                        ) if v != i.output[-1] else
-                                        InstructionTextToken(
-                                            InstructionTextTokenType.TextToken,
-                                            " = "
-                                        )
-                                    ]
+                                call_line.tokens = list(takewhile(lambda t: '=' not in t.text, call_line.tokens))
+                                call_line.tokens.append(
+                                    InstructionTextToken(
+                                        InstructionTextTokenType.TextToken,
+                                        ' = '
+                                    )
+                                )
+                            else:
+                                call_line.tokens = []
                         else:
-                            call_line.tokens.append(
+                            call_line.tokens = [
                                 InstructionTextToken(
                                     InstructionTextTokenType.TextToken,
                                     'return '
                                 )
-                            )
+                            ]
 
                         call_line.tokens.append(
                             InstructionTextToken(
@@ -233,7 +225,8 @@ class ObjcFlowgraph(FlowGraph):
                                 call_line.tokens.append(
                                     InstructionTextToken(
                                         InstructionTextTokenType.CodeSymbolToken if method_ptr else InstructionTextTokenType.ImportToken,
-                                        f"{p}:"
+                                        f"{p}:",
+                                        method_ptr.start if method_ptr else 0
                                     )
                                 )
                                 call_line.tokens.append(v)
