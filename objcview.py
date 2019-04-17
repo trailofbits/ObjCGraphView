@@ -1,5 +1,5 @@
 from binaryninja.binaryview import BinaryView
-from binaryninja.log import log_info
+from binaryninja.log import log_debug
 
 _macho_types = (
     'Fat Mach-O x86_64',
@@ -8,7 +8,7 @@ _macho_types = (
 )
 
 def callback(self):
-    log_info(f"I'm in an analysis completion event! {self.view}")
+    log_debug(f"I'm in an analysis completion event! {self.view}")
 
 # This isn't actually a new BinaryView; it merely serves
 # as a way to hijack control briefly while opening a new
@@ -30,7 +30,7 @@ class ObjcView(BinaryView):
                 except:
                     macho.store_metadata('objc_init', True)
                     macho.add_analysis_completion_event(callback)
-                    log_info(f"Found an Objective-C binary!")
+                    log_debug(f"Found an Objective-C binary!")
 
         # Return False so we are not added as a valid BinaryView
         return False

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, InitVar
 
-from binaryninja import BinaryView, Endianness, Type, Symbol, SymbolType, Function, Type, log_info, Structure, StructureType, FunctionParameter
+from binaryninja import BinaryView, Endianness, Type, Symbol, SymbolType, Function, Type, log_debug, Structure, StructureType, FunctionParameter
 from functools import partial
 from itertools import takewhile
 from .types import basic_types
@@ -27,51 +27,22 @@ class Class:
             new_class = cls(address, view, None, None, None)
             view.session_data['ClassList'][address] = new_class
 
-        from_bytes = partial(
-            int.from_bytes,
-            byteorder=(
-                "little"
-                if view.endianness == Endianness.LittleEndian
-                else "big"
-            )
-        )
+        from_bytes = get_from_bytes(view)
 
-        members = {
-            m.name: m
-            for m in view.types['class_t'].structure.members
-        }
-
-        m_isa = members['isa']
-        m_superclass = members['superclass']
-        m_vtable = members['vtable']
+        members = get_structure_members(address, view.types['class_t'], view)
 
         isa = Class.from_address(
-            from_bytes(
-                view.read(
-                    address + m_isa.offset,
-                    m_isa.type.width
-                )
-            ),
+            members['isa'],
             view
         )
 
         superclass = Class.from_address(
-            from_bytes(
-                view.read(
-                    address + m_superclass.offset,
-                    m_superclass.type.width
-                )
-            ),
+            members['superclass'],
             view
         )
 
         vtable = ClassRO.from_address(
-            from_bytes(
-                view.read(
-                    address + m_vtable.offset,
-                    m_vtable.type.width
-                )
-            ),
+            members['vtable'],
             view
         )
 
@@ -237,7 +208,7 @@ class Class:
         if not self.vtable.ivars:
             return 0, 0
 
-        log_info(f"_define_ivars(view, {self.vtable.ivars:x})")
+        log_debug(f"_define_ivars(view, {self.vtable.ivars:x})")
         ivar_list_t_type = self._view.types['ivar_list_t']
 
         count = next(
@@ -302,7 +273,7 @@ class Class:
         return ivars_start, ivar_count
 
     def define_type(self):
-        # log_info(f"Class.define_type()")
+        # log_debug(f"Class.define_type()")
 
         structure = Structure()
         structure.type = StructureType.ClassStructureType
@@ -331,7 +302,7 @@ class Class:
             self.vtable.name, Type.structure_type(structure))
 
     def define_properties(self):
-        log_info(f"define_properties(view, {self.vtable.baseProperties:x})")
+        log_debug(f"define_properties(view, {self.vtable.baseProperties:x})")
         property_list_t_type = self._view.types['property_list_t']
 
         count = next(
@@ -365,7 +336,7 @@ class Class:
         )
 
     def define_protocols(self):
-        log_info(f"define_protocols(0x{self.vtable.baseProtocols:x})")
+        log_debug(f"define_protocols(0x{self.vtable.baseProtocols:x})")
 
         self._protocols = ProtocolList.from_address(
             self.vtable.baseProtocols, self._view)
@@ -633,6 +604,11 @@ class Method:
         if address == 0:
             return None
 
+        if self_type not in view.types:
+            view.define_user_type(
+                self_type, Type.structure_type(Structure())
+            )
+
         method_t_type = view.types['method_t']
         method_t = Type.named_type_from_type(
             'method_t', method_t_type
@@ -654,9 +630,58 @@ class Method:
             self_type,
             view
         )
+
         members['imp'] = view.get_function_at(members['imp'])
 
+        if members['imp'] is not None:
+            method_name = f'-[{self_type} {members["name"]}]'
+
+            view.define_user_symbol(
+                Symbol(SymbolType.FunctionSymbol, members['imp'].start, method_name, namespace=f"{members['imp'].start:x}")
+            )
+
         return cls(address, **members)
+
+@dataclass
+class Category:
+    address: int
+    name: str
+    cls: Class
+    instanceMethods: MethodList
+    protocols: ProtocolList
+    instanceProperties: int
+
+    @classmethod
+    def from_address(cls, address: int, view: BinaryView) -> Category:
+        if address == 0:
+            return None
+
+        category_t_type = view.types['category_t']
+        category_t = Type.named_type_from_type(
+            'category_t', category_t_type
+        )
+
+        if view.get_data_var_at(address) is None:
+            view.define_user_data_var(address, category_t)
+
+        members = get_structure_members(address, category_t_type, view)
+
+        members['name'] = (
+            view.get_ascii_string_at(members['name'], 1).value
+            if members['name'] else ''
+        )
+
+        members['cls'] = Class.from_address(
+            members['cls'], view
+        )
+
+        members['instanceMethods'] = MethodList.from_address(
+            members['instanceMethods'], members['name'], view
+        )
+
+        members['protocols'] = ProtocolList.from_address(
+            members['protocols'], view
+        )
 
 
 def get_from_bytes(view: BinaryView):
@@ -693,8 +718,6 @@ def _lookup_type(type_string: str, view: BinaryView):
                 )
             )
         elif type_string != '@?' and type_string != '@':
-            print(type_string)
-            print(f"{type_string[2:-1]} not found")
             if type_string[2:-1]:
                 new_type = Type.named_type_from_type(
                     type_string[2:-1], Type.structure_type(Structure()))

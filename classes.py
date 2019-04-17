@@ -1,10 +1,10 @@
 from .types import define_types_plugin, basic_types
-from .class_t import Class
+from .class_t import Class, Protocol, Category
 
-from binaryninja import log_info, log_error, Type, BinaryView, Symbol, SymbolType, Structure, StructureType, Endianness
+from binaryninja import log_debug, log_error, Type, BinaryView, Symbol, SymbolType, Structure, StructureType, Endianness
 
 def define_classes_plugin(view):
-    # log_info("define_classes_plugin")
+    # log_debug("define_classes_plugin")
 
     define_types_plugin(view)
 
@@ -14,11 +14,13 @@ def define_classes_plugin(view):
 
     class_t = Type.named_type_from_type('class_t', view.types.get('class_t'))
 
-    _define_classes(view, class_t)
-
     if class_t is None:
         log_error("class_t is not defined!")
         return
+
+    _define_classes(view, class_t)
+    _define_protocols(view)
+    _define_categories(view)
 
 
 def _define_classes(view: BinaryView, class_t: Type):
@@ -28,14 +30,14 @@ def _define_classes(view: BinaryView, class_t: Type):
         raise KeyError('This binary has no __objc_data section')
 
     for addr in range(__objc_data.start, __objc_data.end, class_t.width):
-        # log_info(f"defining {addr:x}")
+        # log_debug(f"defining {addr:x}")
         current_class = Class.from_address(addr, view)
         current_class.define_class_var()
         current_class.define_symbol()
 
         current_class.define_class_members()
 
-        print(f"Created {current_class}")
+        log_debug(f"Created {current_class}")
 
     __objc_classrefs = view.sections.get('__objc_classrefs')
 
@@ -53,7 +55,7 @@ def _define_classes(view: BinaryView, class_t: Type):
         class_ = view.session_data['ClassList'].get(class_addr) if class_addr else None
 
         if class_ is not None:
-            print(f"{addr:x} points to {class_!r}")
+            log_debug(f"{addr:x} points to {class_!r}")
             view.define_user_symbol(
                 Symbol(
                     SymbolType.DataSymbol,
@@ -61,3 +63,43 @@ def _define_classes(view: BinaryView, class_t: Type):
                     f"_OBJC_CLASS_$_{class_.vtable.name}@GOT"
                 )
             )
+
+def _define_protocols(view: BinaryView):
+    __objc_protorefs = view.sections.get('__objc_protorefs')
+
+    if __objc_protorefs is None:
+        return
+
+    protocol_t = Type.named_type_from_type(
+        'protocol_t', view.types['protocol_t']
+    )
+
+    for address in range(__objc_protorefs.start, __objc_protorefs.end, view.address_size):
+        view.define_user_data_var(address, Type.pointer(view.arch, protocol_t))
+
+        protocol_ptr = int.from_bytes(
+            view.read(address, view.address_size),
+            "little" if view.endianness is Endianness.LittleEndian else "big"
+        )
+
+        new_protocol = Protocol.from_address(protocol_ptr, view)
+
+def _define_categories(view: BinaryView):
+    __objc_catlist = view.sections.get('__objc_catlist')
+
+    if __objc_catlist is None:
+        return
+
+    category_t = Type.named_type_from_type(
+        'category_t', view.types['category_t']
+    )
+
+    for address in range(__objc_catlist.start, __objc_catlist.end, view.address_size):
+        view.define_user_data_var(address, Type.pointer(view.arch, category_t))
+
+        category_ptr = int.from_bytes(
+            view.read(address, view.address_size),
+            "little" if view.endianness is Endianness.LittleEndian else "big"
+        )
+
+        new_category = Category.from_address(category_ptr, view)

@@ -81,7 +81,7 @@ class ObjcFlowgraph(FlowGraph):
                         else:
                             class_name = None
 
-                        class_ = Class.classes.get(class_name)
+                        class_ = func.view.session_data['ClassNames'].get(class_name)
 
                         if i.params[1].operation in (MediumLevelILOperation.MLIL_CONST, MediumLevelILOperation.MLIL_CONST_PTR):
                             selector = i.params[1].constant
@@ -138,7 +138,7 @@ class ObjcFlowgraph(FlowGraph):
                             if len(params) < len(method_params):
                                 # the calling convention didn't pick up one or more parameters
                                 if len(method_params) <= len(self.mlil.source_function.parameter_vars):
-                                    print(f"method_params: {method_params} params: {params}")
+                                    log_debug(f"method_params: {method_params} params: {params}")
                                     for p in range(len(params), len(method_params)):
                                         if p+2 >= len(self.mlil.source_function.parameter_vars):
                                             param_token = InstructionTextToken(

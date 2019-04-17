@@ -1,6 +1,6 @@
 from binaryninja import (DataRenderer, DisassemblyTextLine,
                          InstructionTextToken, InstructionTextTokenType,
-                         log_info, Type, BinaryView)
+                         log_debug, Type, BinaryView)
 
 _cfstring_definition = '''
 struct CFString
@@ -14,7 +14,7 @@ struct CFString
 
 
 def define_cfstrings_plugin(view: BinaryView):
-    log_info("define_cfstrings_plugin")
+    log_debug("define_cfstrings_plugin")
     cfstring_type = view.types.get('CFString')
     if cfstring_type is None:
         cfstring_type = view.platform.parse_types_from_source(
@@ -62,7 +62,7 @@ class CFStringDataRenderer(DataRenderer):
     def perform_get_lines_for_data(self, ctxt, view, addr, type, prefix, width, context):
         prefix.append(InstructionTextToken(
             InstructionTextTokenType.TextToken, "I'm in ur CFString"))
-        log_info(f'{addr:08x} {prefix!r}')
+        log_debug(f'{addr:08x} {prefix!r}')
         return [DisassemblyTextLine(prefix, addr)]
 
     def __del__(self):

@@ -1,4 +1,4 @@
-from binaryninja import PluginCommand, Type, BinaryView, log_info, log_error
+from binaryninja import PluginCommand, Type, BinaryView, log_debug, log_error
 
 _selector_sections = (
     '__objc_methname',
