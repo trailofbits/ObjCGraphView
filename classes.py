@@ -1,5 +1,4 @@
-from .types import define_types_plugin, basic_types
-from .class_t import Class, Protocol, Category
+from .types import define_types_plugin, basic_types, Class, Protocol, Category
 
 from binaryninja import log_debug, log_error, Type, BinaryView, Symbol, SymbolType, Structure, StructureType, Endianness
 
@@ -30,12 +29,7 @@ def _define_classes(view: BinaryView, class_t: Type):
         raise KeyError('This binary has no __objc_data section')
 
     for addr in range(__objc_data.start, __objc_data.end, class_t.width):
-        # log_debug(f"defining {addr:x}")
         current_class = Class.from_address(addr, view)
-        current_class.define_class_var()
-        current_class.define_symbol()
-
-        current_class.define_class_members()
 
         log_debug(f"Created {current_class}")
 
