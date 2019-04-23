@@ -12,6 +12,7 @@ _string_sections = (
 
 
 def define_selectors_plugin(view):
+    log_debug("define_selectors_plugin")
     _define_strings_in_sections(_selector_sections, view)
     _define_selectors(view)
 

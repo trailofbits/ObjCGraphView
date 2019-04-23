@@ -1,12 +1,15 @@
-from .objcview import ObjcView
-from .selectors import define_selectors_plugin
-from .cfstring import define_cfstrings_plugin
-from .types import define_types_plugin
-from .classes import define_classes_plugin
-from .objcgraph import ObjcFlowGraphViewType
+from functools import partial
 
 from binaryninja import PluginCommand
 from binaryninjaui import ViewType
+
+from .cfstring import define_cfstrings_plugin
+from .classes import define_classes_plugin
+from .methods import define_methods
+from .objcgraph import ObjcFlowGraphViewType
+from .objcview import ObjcView
+from .selectors import define_selectors_plugin
+from .types import define_types_plugin
 
 # ObjcView.register()
 
@@ -43,6 +46,7 @@ def _run_all_plugins(view):
     define_selectors_plugin(view)
     define_cfstrings_plugin(view)
     define_classes_plugin(view)
+    define_methods(view)
 
 PluginCommand.register(
     "Objc\\Run all",
