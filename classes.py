@@ -10,6 +10,7 @@ def define_classes_plugin(view):
     view.session_data['ClassList'] = {}
     view.session_data['ClassNames'] = {}
     view.session_data['ClassROList'] = {}
+    view.session_data['Protocols'] = {}
 
     class_t = Type.named_type_from_type('class_t', view.types.get('class_t'))
 

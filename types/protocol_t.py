@@ -133,4 +133,6 @@ class Protocol:
             members['optionalInstanceMethods'], members['name'], view
         )
 
-        return cls(address, **members)
+        new_protocol = cls(address, **members)
+        view.session_data['Protocols'][new_protocol.name] = new_protocol
+        return new_protocol
