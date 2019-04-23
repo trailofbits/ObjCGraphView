@@ -1,6 +1,8 @@
-from binaryninja import BinaryView, Endianness, FunctionParameter, Type, Structure
 from functools import partial
 from itertools import takewhile
+
+from binaryninja import (BinaryView, Endianness, FunctionParameter, Structure,
+                         Type, log_debug)
 
 _objc_types = '''
 struct CFString
@@ -137,6 +139,7 @@ basic_types = {
 
 
 def define_types_plugin(view):
+    log_debug("define_types_plugin")
     objc_types = view.platform.parse_types_from_source(_objc_types)
 
     for objc_type in objc_types.types.items():

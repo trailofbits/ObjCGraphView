@@ -68,8 +68,8 @@ class Category:
                 cls_name = class_match.group('classname')
                 cls_ = view.session_data['ClassNames'].get(cls_name)
                 if cls_ is None:
-                    cls_ = Class(None, view, None, None, None)
-                    cls_._vtable = ClassRO(address, *([None]*11))
+                    cls_ = Class(None, view, None, None, None, {}, {})
+                    cls_.vtable = ClassRO(address, *([None]*11))
                     cls_.vtable.name = cls_name
                     view.session_data['ClassNames'][cls_name] = cls_
 
