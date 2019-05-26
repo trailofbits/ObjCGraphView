@@ -9,15 +9,7 @@ from .bnilvisitor import BNILVisitor
 
 
 def define_methods(view):
-    class DefineMethodsTaskThread(BackgroundTaskThread):
-        def run(self):
-            _define_methods_thread(view)
-
-    DefineMethodsTaskThread().start()
-
-
-def _define_methods_thread(view):
-    log_debug('_define_methods_thread')
+    log_debug('define_methods')
     view.update_analysis_and_wait()
 
     objc_getClass = view.symbols.get('_objc_getClass')

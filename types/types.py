@@ -6,14 +6,6 @@ from binaryninja import (BackgroundTaskThread, BinaryView, Endianness,
                          Type, TypeClass, log_debug)
 
 _objc_types = '''
-struct CFString
-{
-    void* isa;
-    int32_t info;
-    void* buffer;
-    size_t length;
-};
-
 struct NSNumber
 {
     void* isa;
@@ -136,25 +128,12 @@ basic_types = {
     'v': Type.void()
 }
 
-
-class TypeDefinerTask(BackgroundTaskThread):
-    def __init__(self, view):
-        super().__init__('Defining Objective-C Types...')
-        self.view = view
-
-    def run(self):
-        objc_types = self.view.platform.parse_types_from_source(_objc_types)
-
-        for objc_type in objc_types.types.items():
-            self.view.define_user_type(*objc_type)
-            
 def define_types_plugin(view):
     log_debug("define_types_plugin")
-    task = TypeDefinerTask(view)
-    task.start()
+    objc_types = view.platform.parse_types_from_source(_objc_types)
 
-    while not task.finished:
-        pass
+    for objc_type in objc_types.types.items():
+        view.define_user_type(*objc_type)
 
 
 def _get_from_bytes(view: BinaryView):
