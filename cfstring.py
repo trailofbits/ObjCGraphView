@@ -58,11 +58,16 @@ def define_cfstrings_plugin(view: BinaryView):
 
         string_length = from_bytes(
             view.read(addr + length.offset, length.type.width),
-        )
+        ) + 1
+
+        if view.get_sections_at(string_pointer)[0].name == '__ustring':
+            char_type = Type.int(2, True, 'wchar')
+        else:
+            char_type = Type.char()
 
         view.define_user_data_var(
             string_pointer,
-            Type.array(Type.char(), string_length+1)
+            Type.array(char_type, string_length)
         )
 
 _cfstring_allocator_properties = {
@@ -102,6 +107,13 @@ class CFStringDataRenderer(DataRenderer):
                 cfstring['info'].type.width)
         )
 
+        length = from_bytes(
+            view.read(
+                addr + cfstring['length'].offset,
+                cfstring['length'].type.width
+            )
+        )
+
         if info & 0xff == 0xc8:
             info_string = 'noinline,default,nofree,NI'
         elif info & 0xff == 0xd0:
@@ -115,13 +127,16 @@ class CFStringDataRenderer(DataRenderer):
                 f'{"I" if info & 1 else ""}'
             )
 
-        string = view.get_ascii_string_at(buffer, 1)
+        if 'U' not in info_string:
+            string = view.get_ascii_string_at(buffer, 1)
 
-        if string is None:
-            log_debug('string returned None; how did we even get here?')
-            return [DisassemblyTextLine(prefix, addr)]
+            if string is None:
+                log_debug('string returned None; how did we even get here?')
+                return [DisassemblyTextLine(prefix, addr)]
 
-        string = string.value
+            string = string.value
+        else:
+            string = view.read(buffer, length * 2).decode('utf-16')
 
         if symbol is None:
             name = f'data_{addr:x}'
