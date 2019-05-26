@@ -1,6 +1,6 @@
 from functools import partial
 
-from binaryninja import PluginCommand
+from binaryninja import PluginCommand, BackgroundTaskThread
 from binaryninjaui import ViewType
 
 from .cfstring import define_cfstrings_plugin
@@ -17,7 +17,7 @@ PluginCommand.register(
     'Objc\\Define selectors',
     'Define selector strings in Objective-C sections',
     define_selectors_plugin,
-    is_valid=lambda v: '__objc_classname' in v.sections
+    is_valid=lambda v: '__objc_classname' in v.sections or '__objc_selrefs' in v.sections
 )
 
 PluginCommand.register(
@@ -31,7 +31,7 @@ PluginCommand.register(
     'Objc\\Define types',
     'Define Objective-C types',
     define_types_plugin,
-    is_valid=lambda v: '__objc_classname' in v.sections
+    is_valid=lambda v: '__objc_classrefs' in v.sections
 )
 
 PluginCommand.register(
@@ -41,12 +41,23 @@ PluginCommand.register(
     is_valid=lambda v: '__objc_data' in v.sections
 )
 
+class ObjectiveCTaskThread(BackgroundTaskThread):
+    def __init__(self, view):
+        super().__init__('Defining Objective-C Structures...')
+        self.view = view
+
+    def run(self):
+        define_types_plugin(self.view)
+        define_selectors_plugin(self.view)
+        define_cfstrings_plugin(self.view)
+        define_classes_plugin(self.view)
+        define_methods(self.view)
+
 def _run_all_plugins(view):
-    define_types_plugin(view)
-    define_selectors_plugin(view)
-    define_cfstrings_plugin(view)
-    define_classes_plugin(view)
-    define_methods(view)
+    if view.session_data.get('ClassList'):
+        return
+    
+    ObjectiveCTaskThread(view).start()
 
 PluginCommand.register(
     "Objc\\Run all",

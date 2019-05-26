@@ -1,8 +1,11 @@
-from binaryninja import (BackgroundTaskThread, BinaryView,
-                         MediumLevelILOperation, Symbol, SymbolType, Type,
-                         log_debug)
+import re
+
+from binaryninja import (BackgroundTaskThread, BinaryView, Endianness,
+                         MediumLevelILOperation, RegisterValueType, Structure,
+                         Symbol, SymbolType, Type, TypeClass, log_debug)
 
 from .types import basic_types, parse_function_type
+from .bnilvisitor import BNILVisitor
 
 
 def define_methods(view):
@@ -12,7 +15,9 @@ def define_methods(view):
 
     DefineMethodsTaskThread().start()
 
+
 def _define_methods_thread(view):
+    log_debug('_define_methods_thread')
     view.update_analysis_and_wait()
 
     objc_getClass = view.symbols.get('_objc_getClass')
@@ -49,7 +54,6 @@ def _define_methods_thread(view):
             None
         )
 
-
     if objc_getClass is not None:
         parse_get_class(view, objc_getClass.address)
 
@@ -60,6 +64,9 @@ def _define_methods_thread(view):
 
     if class_replaceMethod is not None:
         parse_added_methods(view, class_replaceMethod.address)
+
+    _propagate_types(view)
+
 
 def parse_get_class(view: BinaryView, objc_getClass: int):
     log_debug(f"parse_get_class(view, {objc_getClass:x})")
@@ -74,14 +81,14 @@ def parse_get_class(view: BinaryView, objc_getClass: int):
 
         class_param = get_class_call.params[0]
         log_debug(f"class_param is {class_param.operation!r}")
-        
+
         if class_param.operation in (
                 MediumLevelILOperation.MLIL_CONST,
                 MediumLevelILOperation.MLIL_CONST_PTR):
             class_name_ptr = view.get_ascii_string_at(class_param.constant, 1)
             if class_name_ptr is None:
                 continue
-            
+
             class_name = class_name_ptr.value
 
             cls_ = Type.named_type_from_type(
@@ -116,6 +123,7 @@ def parse_get_class(view: BinaryView, objc_getClass: int):
                 log_debug(f"Updating {use.dest!r} to {cls_ptr}")
                 xref.function.create_user_var(use.dest, cls_ptr, use.dest.name)
                 log_debug(f"Now {use.dest!r}")
+
 
 def parse_added_methods(view: BinaryView, class_addMethod: int):
     log_debug(f"parse_added_methods(view, {class_addMethod:x})")
@@ -157,7 +165,8 @@ def parse_added_methods(view: BinaryView, class_addMethod: int):
             selector_ptr = None
 
             log_debug("Getting get_method_call")
-            get_method_call = mlil.get_ssa_var_definition(selector_param.ssa_form.src)
+            get_method_call = mlil.get_ssa_var_definition(
+                selector_param.ssa_form.src)
 
             while get_method_call.operation != MediumLevelILOperation.MLIL_CALL:
                 if get_method_call.operation != MediumLevelILOperation.MLIL_SET_VAR:
@@ -214,3 +223,111 @@ def parse_added_methods(view: BinaryView, class_addMethod: int):
                 method_string
             )
         )
+
+class TypePropagationVisitor(BNILVisitor):
+    def visit_MLIL_SET_VAR(self, expr):
+        return self.visit(expr.src)
+
+    def visit_MLIL_CALL(self, expr):
+        return expr.output[0].type
+
+    def visit_MLIL_LOAD(self, expr):
+        return self.visit(expr.src)
+
+    def visit_MLIL_VAR(self, expr):
+        return self.visit(
+            expr.function.get_ssa_var_definition(expr.ssa_form.src)
+        )
+
+    def visit_MLIL_CONST(self, expr):
+        view = expr.function.source_function.view
+        class_symbol = view.get_symbol_at(expr.constant)
+
+        if class_symbol is None:
+            return
+
+        log_debug(class_symbol.name)
+
+        class_match = re.match(
+            r'_OBJC_(META)?CLASS_\$_(?P<classname>[_A-Za-z0-9=/]+)(@GOT)?',
+            class_symbol.name
+        )
+
+        class_name = class_match.group('classname')
+
+        class_type = view.types.get(class_name)
+
+        if class_type is None:
+            view.define_user_type(class_name, Type.structure_type(Structure()))
+            class_type = view.types.get(class_name)
+
+        return Type.pointer(
+            view.arch,
+            Type.named_type_from_type(class_name, class_type)
+        )
+
+    visit_MLIL_IMPORT = visit_MLIL_CONST
+    visit_MLIL_CONST_PTR = visit_MLIL_CONST
+
+def _propagate_types(view):
+    log_debug('_propagate_types')
+    objc_msgSend = view.symbols.get('_objc_msgSend@PLT')
+
+    for xref in view.get_code_refs(objc_msgSend.address):
+        xref_mlil = xref.function.get_low_level_il_at(xref.address).mlil
+
+        if xref_mlil is None:
+            continue
+
+        if xref_mlil.operation != MediumLevelILOperation.MLIL_CALL:
+            continue
+
+        selector_ptr = xref_mlil.params[1]
+
+        if not selector_ptr.value.is_constant or selector_ptr.value.value == 0:
+            continue
+
+        selector = view.get_ascii_string_at(selector_ptr.value.value, 1)
+
+        if selector is None:
+            selector_ptr = int.from_bytes(
+                view.read(selector_ptr.value.value, view.address_size),
+                "little" if view.endianness is Endianness.LittleEndian else "big"
+            )
+            log_debug(f'{selector_ptr:x}')
+            selector = view.get_ascii_string_at(selector_ptr)
+
+        if selector is None or selector.value not in ("alloc", "init"):
+            continue
+
+        self_ = xref_mlil.params[0]
+        if self_.operation != MediumLevelILOperation.MLIL_VAR:
+            continue
+
+        self_var = self_.src
+
+        self_type = self_.src.type
+
+        if self_type.type_class != TypeClass.PointerTypeClass:
+            continue
+
+        self_struct = self_type.target
+
+        if self_struct.type_class != TypeClass.NamedTypeReferenceClass:
+            continue
+
+        log_debug(f'{xref.address:x} -> {selector.value}')
+
+        class_type = TypePropagationVisitor().visit(self_)
+
+        log_debug(f'{class_type!r}')
+
+        return_var = xref_mlil.output[0]
+
+        xref.function.create_user_var(
+            return_var,
+            class_type,
+            return_var.name
+        )
+
+        view.update_analysis_and_wait()

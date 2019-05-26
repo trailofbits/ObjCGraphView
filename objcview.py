@@ -24,7 +24,7 @@ class ObjcView(BinaryView):
     def is_valid_for_data(self, data):
         for view_type in _macho_types:
             macho: BinaryView = data.get_view_of_type(view_type)
-            if macho is not None and '__cfstring' in macho.sections:
+            if macho is not None and '_objc_msgSend' in macho.symbols:
                 try:
                     macho.query_metadata('objc_init')
                 except:

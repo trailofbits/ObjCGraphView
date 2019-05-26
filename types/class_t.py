@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import InitVar, dataclass
 from functools import partial
 
@@ -16,7 +15,6 @@ from .types import _get_from_bytes as get_from_bytes
 from .ivar_t import IvarList
 from .method_t import MethodList
 from .property_t import PropertyList
-from .protocol_t import ProtocolList
 
 @dataclass
 class Class:
@@ -145,7 +143,7 @@ class ClassRO:
     reserved: int
     ivarLayout: str
     name: str
-    baseMethods: MethodLIst
+    baseMethods: MethodList
     baseProtocols: ProtocolList
     ivars: IvarList
     weakIvarLayout: object
@@ -153,6 +151,7 @@ class ClassRO:
 
     @classmethod
     def from_address(cls, address: int, view: BinaryView):
+        from .protocol_t import ProtocolList
         if address == 0:
             return None
 

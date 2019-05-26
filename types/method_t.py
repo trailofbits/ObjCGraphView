@@ -97,13 +97,16 @@ class Method:
             method_name = f'-[{self_type} {members["name"]}]'
 
             if view.symbols.get(method_name):
-                method_name += f"_{members['imp'].start:x}"
+                namespace = f'{members["imp"].start}'
+            else:
+                namespace = None
 
             view.define_user_symbol(
                 Symbol(
                     SymbolType.FunctionSymbol,
                     members['imp'].start,
-                    method_name
+                    method_name,
+                    namespace=namespace
                 )
             )
 

@@ -13,6 +13,7 @@ from .types import _lookup_type
 from .types import _parse_function_type as parse_function_type
 from .types import basic_types
 from .types import _get_from_bytes as get_from_bytes
+from .class_t import Class
 from .method_t import MethodList
 
 @dataclass

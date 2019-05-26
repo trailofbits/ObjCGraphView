@@ -1,8 +1,9 @@
 from functools import partial
 from itertools import takewhile
 
-from binaryninja import (BinaryView, Endianness, FunctionParameter, Structure,
-                         Type, log_debug)
+from binaryninja import (BackgroundTaskThread, BinaryView, Endianness,
+                         FunctionParameter, MediumLevelILOperation, Structure,
+                         Type, TypeClass, log_debug)
 
 _objc_types = '''
 struct CFString
@@ -10,7 +11,7 @@ struct CFString
     void* isa;
     int32_t info;
     void* buffer;
-    int64_t length;
+    size_t length;
 };
 
 struct NSNumber
@@ -65,8 +66,6 @@ struct protocol_list_t
 {
     uint64_t count;
 };
-
-typedef uint64_t protocol_ref_t;
 
 struct protocol_t
 {
@@ -138,12 +137,24 @@ basic_types = {
 }
 
 
+class TypeDefinerTask(BackgroundTaskThread):
+    def __init__(self, view):
+        super().__init__('Defining Objective-C Types...')
+        self.view = view
+
+    def run(self):
+        objc_types = self.view.platform.parse_types_from_source(_objc_types)
+
+        for objc_type in objc_types.types.items():
+            self.view.define_user_type(*objc_type)
+            
 def define_types_plugin(view):
     log_debug("define_types_plugin")
-    objc_types = view.platform.parse_types_from_source(_objc_types)
+    task = TypeDefinerTask(view)
+    task.start()
 
-    for objc_type in objc_types.types.items():
-        view.define_user_type(*objc_type)
+    while not task.finished:
+        pass
 
 
 def _get_from_bytes(view: BinaryView):

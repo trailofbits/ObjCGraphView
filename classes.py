@@ -1,9 +1,11 @@
-from .types import define_types_plugin, basic_types, Class, Protocol, Category
+from binaryninja import (BinaryView, Endianness, Structure, StructureType,
+                         Symbol, SymbolType, Type, log_debug, log_error)
 
-from binaryninja import log_debug, log_error, Type, BinaryView, Symbol, SymbolType, Structure, StructureType, Endianness
+from .types import Category, Class, Protocol, basic_types, define_types_plugin
+
 
 def define_classes_plugin(view):
-    # log_debug("define_classes_plugin")
+    log_debug("define_classes_plugin")
 
     define_types_plugin(view)
 
@@ -47,7 +49,8 @@ def _define_classes(view: BinaryView, class_t: Type):
             "little" if view.endianness is Endianness.LittleEndian else "big"
         )
 
-        class_ = view.session_data['ClassList'].get(class_addr) if class_addr else None
+        class_ = view.session_data['ClassList'].get(
+            class_addr) if class_addr else None
 
         if class_ is not None:
             log_debug(f"{addr:x} points to {class_!r}")
@@ -58,6 +61,7 @@ def _define_classes(view: BinaryView, class_t: Type):
                     f"_OBJC_CLASS_$_{class_.vtable.name}@GOT"
                 )
             )
+
 
 def _define_protocols(view: BinaryView):
     __objc_protorefs = view.sections.get('__objc_protorefs')
@@ -78,6 +82,7 @@ def _define_protocols(view: BinaryView):
         )
 
         new_protocol = Protocol.from_address(protocol_ptr, view)
+
 
 def _define_categories(view: BinaryView):
     __objc_catlist = view.sections.get('__objc_catlist')
