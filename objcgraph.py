@@ -1,11 +1,12 @@
 import re
 from itertools import takewhile
 
-from binaryninja import (DisassemblySettings, DisassemblyTextRenderer,
-                         FlowGraph, FlowGraphNode, Function,
-                         InstructionTextToken, InstructionTextTokenType,
-                         MediumLevelILInstruction, MediumLevelILOperation,
-                         TypeClass, Variable, log_debug, Endianness, RegisterValueType)
+from binaryninja import (DisassemblySettings, DisassemblyTextLine,
+                         DisassemblyTextRenderer, Endianness, FlowGraph,
+                         FlowGraphNode, Function, InstructionTextToken,
+                         InstructionTextTokenType, MediumLevelILInstruction,
+                         MediumLevelILOperation, RegisterValueType, SymbolType,
+                         TypeClass, Variable, log_debug)
 from binaryninjaui import FlowGraphWidget, ViewType
 
 from .types import Class
@@ -70,6 +71,10 @@ class ObjcFlowgraph(FlowGraph):
         self.view = function.view
         self.mlil = function.mlil
         self._objc_msgSend = function.view.symbols.get('_objc_msgSend@PLT')
+        self._objc_msgSend_stret = next(
+            s for s in function.view.symbols.get('_objc_msgSend_stret')
+            if s.type == SymbolType.ImportedFunctionSymbol
+        )
         self._objc_retain = function.view.symbols.get('_objc_retain@PLT')
         self._objc_release = function.view.symbols.get('_objc_release@PLT')
 
@@ -109,6 +114,25 @@ class ObjcFlowgraph(FlowGraph):
 
             # Iterate through instructions in this block and add disassembly lines
             lines = []
+
+            if mlil.basic_blocks.index(block) == 0:
+                lines.append(
+                    DisassemblyTextLine(
+                        [
+                            InstructionTextToken(
+                                InstructionTextTokenType.CodeSymbolToken,
+                                func.name,
+                                func.start
+                            ),
+                            InstructionTextToken(
+                                InstructionTextTokenType.TextToken,
+                                ':'
+                            )
+                        ],
+                        func.start
+                    )
+                )
+
             for i in block:
                 # Display IL instruction
                 il_lines, length = renderer.get_disassembly_text(i.instr_index)
@@ -133,23 +157,38 @@ class ObjcFlowgraph(FlowGraph):
                     elif self._objc_msgSend and i.dest.constant == self._objc_msgSend.address:
                         self.render_msgSend(i, il_lines, renderer)
 
+                    elif self._objc_msgSend_stret and i.dest.constant == self._objc_msgSend_stret.address:
+                        self.render_msgSend(i, il_lines, renderer, stret=True)
+
                 lines += il_lines
 
             nodes[block.start].lines = lines
 
-    def render_msgSend(self, i, il_lines, renderer):
+    def render_msgSend(self, i, il_lines, renderer, stret=False):
+        log_debug(f'render_msgSend{"_stret" if stret else ""}')
         call_line = next(
             line for line in il_lines
             if any('objc_msgSend' in t.text for t in line.tokens)
         )
 
+        if stret is False:
+            stret = None
+            receiver = i.params[0]
+            selector = i.params[1]
+            params_start = 2
+        else:
+            stret = i.params[0]
+            receiver = i.params[1]
+            selector = i.params[2]
+            params_start = 3
+
         type_ = (
-            i.params[0].src.type
-            if i.params[0].operation == MediumLevelILOperation.MLIL_VAR
+            receiver.src.type
+            if receiver.operation == MediumLevelILOperation.MLIL_VAR
             else None
         )
         if type_ is None:
-            raise NotImplementedError(f'i.params[0] was {i.params[0]}')
+            raise NotImplementedError(f'receiver was {receiver}')
         if type_.type_class == TypeClass.NamedTypeReferenceClass:
             class_name = type_.named_type_reference.name
         elif type_.type_class == TypeClass.PointerTypeClass:
@@ -162,25 +201,25 @@ class ObjcFlowgraph(FlowGraph):
 
         class_ = self.view.session_data['ClassNames'].get(class_name)
 
-        if (i.params[1].operation in
+        if (selector.operation in
                 (
                     MediumLevelILOperation.MLIL_CONST,
                     MediumLevelILOperation.MLIL_CONST_PTR
                 )
         ):
-            selector = i.params[1].constant
+            selector = selector.constant
             selector_value = self.view.get_ascii_string_at(selector, 2).value
-        elif i.params[1].operation == MediumLevelILOperation.MLIL_VAR:
-            selector_value = i.params[1].src
+        elif selector.operation == MediumLevelILOperation.MLIL_VAR:
+            selector_value = selector.src
 
-        id_ = i.params[0].src
+        id_ = receiver.src
 
         id_, method_string, method_ptr = lookup_selector(
             i, id_, class_name, class_, selector_value
         )
 
         if ':' in method_string:
-            params = i.params[2:]
+            params = i.params[params_start:]
             method_params = method_string.split(':')
             if len(method_params) > method_string.count(':'):
                 method_params = method_params[:method_string.count(':')]
@@ -229,7 +268,7 @@ class ObjcFlowgraph(FlowGraph):
                     log_debug(
                         f"method_params: {method_params} params: {params}")
                     for p in range(len(params), len(method_params)):
-                        if p+2 >= len(self.mlil.source_function.parameter_vars):
+                        if p+params_start >= len(self.mlil.source_function.parameter_vars):
                             param_token = InstructionTextToken(
                                 InstructionTextTokenType.TextToken,
                                 '<Unknown Parameter>'
@@ -238,8 +277,8 @@ class ObjcFlowgraph(FlowGraph):
                             param_token = InstructionTextToken(
                                 InstructionTextTokenType.LocalVariableToken,
                                 str(
-                                    self.mlil.source_function.parameter_vars[p+2]),
-                                self.mlil.source_function.parameter_vars[p+2].identifier
+                                    self.mlil.source_function.parameter_vars[p+params_start]),
+                                self.mlil.source_function.parameter_vars[p+params_start].identifier
                             )
 
                         method_params[p] = (
@@ -261,6 +300,18 @@ class ObjcFlowgraph(FlowGraph):
                         ' = '
                     )
                 )
+            elif stret is not None:
+                call_line.tokens = [
+                    InstructionTextToken(
+                        InstructionTextTokenType.LocalVariableToken,
+                        stret.src.name,
+                        stret.src.identifier
+                    ),
+                    InstructionTextToken(
+                        InstructionTextTokenType.TextToken,
+                        ' = '
+                    )
+                ]
             else:
                 call_line.tokens = []
         else:
