@@ -128,7 +128,7 @@ class CFStringDataRenderer(DataRenderer):
             )
 
         if 'U' not in info_string:
-            string = view.get_ascii_string_at(buffer, 1)
+            string = view.get_ascii_string_at(buffer, 0)
 
             if string is None:
                 log_debug('string returned None; how did we even get here?')
@@ -171,7 +171,7 @@ class CFStringDataRenderer(DataRenderer):
             ),
             InstructionTextToken(
                 InstructionTextTokenType.StringToken,
-                f'"{string}"',
+                f'{string!r}',
                 buffer
             ),
             InstructionTextToken(
