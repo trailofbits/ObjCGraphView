@@ -48,9 +48,17 @@ class ObjectiveCTaskThread(BackgroundTaskThread):
 
     def run(self):
         define_types_plugin(self.view)
+
+        self.progress = 'Defining Objective-C selectors...'
         define_selectors_plugin(self.view)
+
+        self.progress = 'Defining CFStrings...'
         define_cfstrings_plugin(self.view)
+
+        self.progress = 'Defining Objective-C classes...'
         define_classes_plugin(self.view)
+
+        self.progress = 'Defining Objective-C methods...'
         define_methods(self.view)
 
 def _run_all_plugins(view):
