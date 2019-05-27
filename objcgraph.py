@@ -72,8 +72,19 @@ class ObjcFlowgraph(FlowGraph):
         self.mlil = function.mlil
         self._objc_msgSend = function.view.symbols.get('_objc_msgSend@PLT')
         self._objc_msgSend_stret = next(
-            s for s in function.view.symbols.get('_objc_msgSend_stret')
-            if s.type == SymbolType.ImportedFunctionSymbol
+            (s for s in function.view.symbols.get('_objc_msgSend_stret', [])
+            if s.type == SymbolType.ImportedFunctionSymbol),
+            None
+        )
+        self._objc_msgSendSuper = next(
+            (s for s in function.view.symbols.get('_objc_msgSendSuper2', [])
+            if s.type == SymbolType.ImportedFunctionSymbol),
+            None
+        )
+        self._objc_msgSendSuper_stret = next(
+            (s for s in function.view.symbols.get('_objc_msgSendSuper_stret', [])
+            if s.type == SymbolType.ImportedFunctionSymbol),
+            None
         )
         self._objc_retain = function.view.symbols.get('_objc_retain@PLT')
         self._objc_release = function.view.symbols.get('_objc_release@PLT')
@@ -160,12 +171,18 @@ class ObjcFlowgraph(FlowGraph):
                     elif self._objc_msgSend_stret and i.dest.constant == self._objc_msgSend_stret.address:
                         self.render_msgSend(i, il_lines, renderer, stret=True)
 
+                    elif self._objc_msgSendSuper and i.dest.constant == self._objc_msgSendSuper.address:
+                        self.render_msgSend(i, il_lines, renderer, super_=True)
+
+                    elif self._objc_msgSendSuper_stret and i.dest.constant == self._objc_msgSendSuper_stret.address:
+                        self.render_msgSend(i, il_lines, renderer, stret=True, super_=True)
+
                 lines += il_lines
 
             nodes[block.start].lines = lines
 
-    def render_msgSend(self, i, il_lines, renderer, stret=False):
-        log_debug(f'render_msgSend{"_stret" if stret else ""}')
+    def render_msgSend(self, i, il_lines, renderer, stret=False, super_=False):
+        log_debug(f'render_msgSend{"Super" if super_ else ""}{"_stret" if stret else ""}')
         call_line = next(
             line for line in il_lines
             if any('objc_msgSend' in t.text for t in line.tokens)
@@ -192,6 +209,8 @@ class ObjcFlowgraph(FlowGraph):
         if type_.type_class == TypeClass.NamedTypeReferenceClass:
             class_name = type_.named_type_reference.name
         elif type_.type_class == TypeClass.PointerTypeClass:
+            if super_ and type_.target.type_class == TypeClass.PointerTypeClass:
+                type_ = type_.target
             if type_.target.type_class == TypeClass.NamedTypeReferenceClass:
                 class_name = type_.target.named_type_reference.name
             else:
@@ -200,6 +219,14 @@ class ObjcFlowgraph(FlowGraph):
             class_name = None
 
         class_ = self.view.session_data['ClassNames'].get(class_name)
+
+        if super_ and class_ is not None:
+            class_ = class_.superclass
+
+            if class_ is not None:
+                class_name = class_.vtable.name
+
+        log_debug(f"class_name is {class_name}")
 
         if (selector.operation in
                 (
@@ -330,14 +357,22 @@ class ObjcFlowgraph(FlowGraph):
             )
         )
 
-        call_line.tokens.append(
-            InstructionTextToken(
-                InstructionTextTokenType.LocalVariableToken if isinstance(
-                    id_, Variable) else InstructionTextTokenType.ImportToken,
-                id_.name if isinstance(id_, Variable) else id_,
-                id_.identifier if isinstance(id_, Variable) else 0
+        if not super_:
+            call_line.tokens.append(
+                InstructionTextToken(
+                    InstructionTextTokenType.LocalVariableToken if isinstance(
+                        id_, Variable) else InstructionTextTokenType.ImportToken,
+                    id_.name if isinstance(id_, Variable) else id_,
+                    id_.identifier if isinstance(id_, Variable) else 0
+                )
             )
-        )
+        else:
+            call_line.tokens.append(
+                InstructionTextToken(
+                    InstructionTextTokenType.KeywordToken,
+                    "super"
+                )
+            )
 
         call_line.tokens.append(
             InstructionTextToken(
