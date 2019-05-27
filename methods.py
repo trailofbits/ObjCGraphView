@@ -314,6 +314,9 @@ def _propagate_types(view):
 
         log_debug(f'{class_type!r}')
 
+        if class_type is None:
+            return
+
         return_var = xref_mlil.output[0]
 
         xref.function.create_user_var(
