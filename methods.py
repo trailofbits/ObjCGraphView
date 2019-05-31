@@ -4,8 +4,8 @@ from binaryninja import (BackgroundTaskThread, BinaryView, Endianness,
                          MediumLevelILOperation, RegisterValueType, Structure,
                          Symbol, SymbolType, Type, TypeClass, log_debug)
 
-from .types import basic_types, parse_function_type
 from .bnilvisitor import BNILVisitor
+from .types import basic_types, parse_function_type
 
 
 def define_methods(view):
@@ -58,6 +58,10 @@ def define_methods(view):
         parse_added_methods(view, class_replaceMethod.address)
 
     _propagate_types(view)
+
+    _propagate_stret_types(view)
+
+    _add_xrefs(view)
 
 
 def parse_get_class(view: BinaryView, objc_getClass: int):
@@ -216,6 +220,7 @@ def parse_added_methods(view: BinaryView, class_addMethod: int):
             )
         )
 
+
 class TypePropagationVisitor(BNILVisitor):
     def visit_MLIL_SET_VAR(self, expr):
         return self.visit(expr.src)
@@ -227,9 +232,12 @@ class TypePropagationVisitor(BNILVisitor):
         return self.visit(expr.src)
 
     def visit_MLIL_VAR(self, expr):
-        return self.visit(
-            expr.function.get_ssa_var_definition(expr.ssa_form.src)
-        )
+        def_ = expr.function.get_ssa_var_definition(expr.ssa_form.src)
+
+        if def_ is not None:
+            return self.visit(
+                def_
+            )
 
     def visit_MLIL_CONST(self, expr):
         view = expr.function.source_function.view
@@ -260,6 +268,9 @@ class TypePropagationVisitor(BNILVisitor):
 
     visit_MLIL_IMPORT = visit_MLIL_CONST
     visit_MLIL_CONST_PTR = visit_MLIL_CONST
+
+# propagate types for alloc and init calls
+
 
 def _propagate_types(view):
     log_debug('_propagate_types')
@@ -326,3 +337,139 @@ def _propagate_types(view):
         )
 
         view.update_analysis_and_wait()
+
+
+def _propagate_stret_types(view: BinaryView):
+    log_debug('_propagate_stret_types')
+    objc_msgSend_stret = next(
+        (s for s in view.symbols.get('_objc_msgSend_stret', [])
+         if s.type == SymbolType.ImportedFunctionSymbol),
+        None
+    )
+
+    if objc_msgSend_stret is None:
+        return
+
+    for xref in view.get_code_refs(objc_msgSend_stret.address):
+        xref_mlil = xref.function.get_low_level_il_at(xref.address).mlil
+        log_debug(f"{xref.address:x} {xref_mlil}")
+
+        if xref_mlil is None:
+            continue
+
+        if xref_mlil.operation != MediumLevelILOperation.MLIL_CALL:
+            continue
+
+        selector_ptr = xref_mlil.params[2]
+
+        if not selector_ptr.value.is_constant or selector_ptr.value.value == 0:
+            continue
+
+        log_debug(f'selector_ptr is {selector_ptr.value.value:x}')
+
+        selector = view.get_ascii_string_at(selector_ptr.value.value, 1)
+
+        if selector is None:
+            selector_ptr = int.from_bytes(
+                view.read(selector_ptr.value.value, view.address_size),
+                "little" if view.endianness is Endianness.LittleEndian else "big"
+            )
+            log_debug(f'{selector_ptr:x}')
+            selector = view.get_ascii_string_at(selector_ptr)
+
+        if selector is None:
+            continue
+
+        log_debug(f"selector is {selector.value}")
+
+        receiver = xref_mlil.params[1]
+
+        if receiver.operation != MediumLevelILOperation.MLIL_VAR:
+            continue
+
+        receiver_type = receiver.src.type
+
+        log_debug(f'receiver_type is {receiver_type}')
+
+        if (receiver_type.target is None or 
+                receiver_type.target.type_class != TypeClass.NamedTypeReferenceClass):
+            continue
+
+        receiver_name = receiver_type.target.named_type_reference.name
+
+        log_debug(f'receiver name is {receiver_name}')
+
+        receiver_class = view.session_data['ClassNames'].get(receiver_name)
+
+        if receiver_class is None:
+            continue
+
+        if receiver_class.vtable is None or receiver_class.vtable.baseMethods is None:
+            continue
+
+        method = receiver_class.vtable.baseMethods.methods.get(selector.value)
+
+        if method is None:
+            continue
+
+        log_debug(f'method is {method}')
+
+        ret_type = method.types.parameters[0].type
+
+        xref.function.create_user_var(
+            xref_mlil.params[0].src,
+            ret_type,
+            xref_mlil.params[0].src.name
+        )
+
+def _add_xrefs(view: BinaryView):
+    log_debug('_add_xrefs')
+    method_t = view.types.get('method_t')
+    if method_t is None:
+        return
+
+    method_t_struct = method_t.structure
+
+    method_t_name = method_t_struct['name']
+
+    for function in view.functions:
+        data_refs = view.get_data_refs(function.start)
+
+        log_debug(f'{function.name}: {data_refs}')
+
+        method_t_list = [
+            var
+            for var in map(
+                view.get_data_var_at,
+                (ref for ref in data_refs)
+            )
+        ]
+
+        log_debug(f'{function.name}: {method_t_list}')
+
+        for method in method_t_list:
+            name_ptr = int.from_bytes(
+                view.read(method.address + method_t_name.offset, view.address_size),
+                "little" if view.endianness == Endianness.LittleEndian else "big"
+            )
+
+            for xref in view.get_code_refs(name_ptr):
+                xref_mlil = xref.function.get_low_level_il_at(xref.address).mmlil
+
+                if xref_mlil is None:
+                    log_debug(f'{xref.address:x}')
+                    return
+
+                if xref_mlil.operation == MediumLevelILOperation.MLIL_SET_VAR:
+                    call_mlil = next(
+                        (use
+                        for use in xref_mlil.function.get_ssa_var_uses(xref_mlil.ssa_form.dest)
+                        if (use.instr_index > xref_mlil.instr_index and
+                            use.il_basic_block == xref_mlil.il_basic_block)),
+                        None
+                    )
+                else:
+                    return
+
+                if call_mlil is not None:
+                    xref.function.set_user_xref(call_mlil.address, function.start)

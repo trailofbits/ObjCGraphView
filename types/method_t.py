@@ -23,7 +23,7 @@ class MethodList:
     methods: dict
 
     @classmethod
-    def from_address(cls, address: int, self_type: str, view: BinaryView):
+    def from_address(cls, address: int, self_type: str, view: BinaryView, is_class=False):
         if address == 0:
             return None
 
@@ -45,7 +45,7 @@ class MethodList:
         end = start + members['count'] * method_t.width
         step = method_t.width
         for method_addr in range(start, end, step):
-            method = Method.from_address(method_addr, self_type, view)
+            method = Method.from_address(method_addr, self_type, view, is_class)
             if method is not None:
                 methods[method.name] = method
 
@@ -60,7 +60,7 @@ class Method:
     imp: Function
 
     @classmethod
-    def from_address(cls, address: int, self_type: str, view: BinaryView):
+    def from_address(cls, address: int, self_type: str, view: BinaryView, is_class=False):
         if address == 0:
             return None
 
@@ -88,13 +88,17 @@ class Method:
             view.get_ascii_string_at(members['types'], 1).value
             if members['types'] else '',
             self_type,
-            view
+            view,
+            is_class
         )
 
         members['imp'] = view.get_function_at(members['imp'])
 
         if members['imp'] is not None:
-            method_name = f'-[{self_type} {members["name"]}]'
+            if not is_class:
+                method_name = f'-[{self_type} {members["name"]}]'
+            else:
+                method_name = f'+[{self_type} {members["name"]}]'
 
             if view.symbols.get(method_name):
                 namespace = f'{members["imp"].start}'

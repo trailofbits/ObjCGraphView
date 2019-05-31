@@ -8,11 +8,12 @@ from binaryninja import (Architecture, BinaryView, Endianness, Function,
                          FunctionParameter, Structure, StructureType, Symbol,
                          SymbolType, Type, log_debug)
 
+from .types import _get_from_bytes as get_from_bytes
 from .types import _get_structure_members as get_structure_members
 from .types import _lookup_type
 from .types import _parse_function_type as parse_function_type
 from .types import basic_types
-from .types import _get_from_bytes as get_from_bytes
+
 
 @dataclass
 class Property:

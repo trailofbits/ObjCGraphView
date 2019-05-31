@@ -58,7 +58,7 @@ class Category:
                 if m.name == 'cls'
             )
             cls_name = view.get_symbol_at(address + cls_offset)
-            cls_name = cls_name.name if cls_name is not None else '<Unknown Class>'
+            cls_name = cls_name.name if cls_name is not None else members['name']
 
             class_match = re.match(
                 r'_OBJC_(META)?CLASS_\$_(?P<classname>[_A-Za-z0-9=/]+)(@GOT)?',
@@ -81,9 +81,9 @@ class Category:
             members['instanceMethods'], cls_name, view
         )
 
-        if not members['cls'].methods:
+        if members['cls'] is not None and not members['cls'].methods:
             members['cls']._methods = members['instanceMethods'].methods
-        else:
+        elif members['cls'] is not None:
             members['cls']._methods.update(members['instanceMethods'].methods)
 
         members['protocols'] = ProtocolList.from_address(

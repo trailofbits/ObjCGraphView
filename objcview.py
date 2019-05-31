@@ -7,6 +7,7 @@ _macho_types = (
     'Mach-O'
 )
 
+
 def callback(self):
     log_debug(f"I'm in an analysis completion event! {self.view}")
 
@@ -16,6 +17,8 @@ def callback(self):
 # Objective-C binary. If it is, we apply an analysis
 # completion event callback that will execute as soon
 # as the initial analysis completes.
+
+
 class ObjcView(BinaryView):
     name = 'Objc'
     long_name = 'Objc'

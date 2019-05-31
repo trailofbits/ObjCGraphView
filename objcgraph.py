@@ -17,9 +17,12 @@ def lookup_selector(i: MediumLevelILInstruction, id_, class_name: str, class_: C
     view = mlil.source_function.view
 
     if class_ is not None and selector in class_.methods:
-            return id_, selector, class_.methods[selector]
+        log_debug(f"Found {class_.methods[selector]}")
+        return id_, selector, class_.methods[selector]
     elif class_ is not None:
+        # TODO: check isa before superclass? 
         log_debug(f"Didn't find {selector} in {class_name}")
+
         superclass = class_.superclass
         while superclass is not None:
             log_debug(f"Checking for {selector} in {superclass.vtable.name}")
@@ -46,10 +49,12 @@ def lookup_selector(i: MediumLevelILInstruction, id_, class_name: str, class_: C
             MediumLevelILOperation.MLIL_CONST_PTR,
             MediumLevelILOperation.MLIL_IMPORT
         ):
-            class_symbol = mlil.source_function.view.get_symbol_at(src.constant)
+            class_symbol = mlil.source_function.view.get_symbol_at(
+                src.constant)
         elif (src.operation == MediumLevelILOperation.MLIL_LOAD and
                 src.src.value.type == RegisterValueType.ConstantPointerValue):
-            class_symbol = mlil.source_function.view.get_symbol_at(src.src.value.value)
+            class_symbol = mlil.source_function.view.get_symbol_at(
+                src.src.value.value)
         else:
             class_symbol = None
 
@@ -60,6 +65,13 @@ def lookup_selector(i: MediumLevelILInstruction, id_, class_name: str, class_: C
             )
             if class_match:
                 id_ = class_match.group('classname')
+
+                log_debug(f'Checking {id_}_meta')
+                meta = view.session_data['ClassNames'].get(f'{id_}_meta')
+
+                if meta is not None and method_string in meta.methods:
+                    method_ptr = meta.methods[method_string]
+                    log_debug(f'Found {method_string} in {meta.vtable.name}!')
 
     return id_, method_string, method_ptr
 
@@ -73,17 +85,17 @@ class ObjcFlowgraph(FlowGraph):
         self._objc_msgSend = function.view.symbols.get('_objc_msgSend@PLT')
         self._objc_msgSend_stret = next(
             (s for s in function.view.symbols.get('_objc_msgSend_stret', [])
-            if s.type == SymbolType.ImportedFunctionSymbol),
+             if s.type == SymbolType.ImportedFunctionSymbol),
             None
         )
         self._objc_msgSendSuper = next(
             (s for s in function.view.symbols.get('_objc_msgSendSuper2', [])
-            if s.type == SymbolType.ImportedFunctionSymbol),
+             if s.type == SymbolType.ImportedFunctionSymbol),
             None
         )
         self._objc_msgSendSuper_stret = next(
             (s for s in function.view.symbols.get('_objc_msgSendSuper_stret', [])
-            if s.type == SymbolType.ImportedFunctionSymbol),
+             if s.type == SymbolType.ImportedFunctionSymbol),
             None
         )
         self._objc_retain = function.view.symbols.get('_objc_retain@PLT')
@@ -174,15 +186,18 @@ class ObjcFlowgraph(FlowGraph):
                     elif self._objc_msgSendSuper and i.dest.constant == self._objc_msgSendSuper.address:
                         self.render_msgSend(i, il_lines, renderer, super_=True)
 
-                    elif self._objc_msgSendSuper_stret and i.dest.constant == self._objc_msgSendSuper_stret.address:
-                        self.render_msgSend(i, il_lines, renderer, stret=True, super_=True)
+                    elif (self._objc_msgSendSuper_stret and
+                            i.dest.constant == self._objc_msgSendSuper_stret.address):
+                        self.render_msgSend(
+                            i, il_lines, renderer, stret=True, super_=True)
 
                 lines += il_lines
 
             nodes[block.start].lines = lines
 
     def render_msgSend(self, i, il_lines, renderer, stret=False, super_=False):
-        log_debug(f'render_msgSend{"Super" if super_ else ""}{"_stret" if stret else ""}')
+        log_debug(
+            f'render_msgSend{"Super" if super_ else ""}{"_stret" if stret else ""}')
         call_line = next(
             line for line in il_lines
             if any('objc_msgSend' in t.text for t in line.tokens)
@@ -204,8 +219,23 @@ class ObjcFlowgraph(FlowGraph):
             if receiver.operation == MediumLevelILOperation.MLIL_VAR
             else None
         )
-        if type_ is None:
+
+        if (type_ is None and 
+                receiver.operation == MediumLevelILOperation.MLIL_CONST_PTR):
+            receiver_var = self.view.data_vars.get(receiver.constant)
+            log_debug(f"receiver_var is {receiver_var}")
+            if receiver_var is None:
+                class_name = None
+            else:
+                type_ = receiver_var.type
+            id_ = receiver.constant
+        elif type_ is None:
             raise NotImplementedError(f'receiver was {receiver}')
+        else:
+            id_ = receiver.src
+
+        log_debug(f'id_ is {id_}')
+
         if type_.type_class == TypeClass.NamedTypeReferenceClass:
             class_name = type_.named_type_reference.name
         elif type_.type_class == TypeClass.PointerTypeClass:
@@ -217,6 +247,7 @@ class ObjcFlowgraph(FlowGraph):
                 class_name = None
         else:
             class_name = None
+
 
         class_ = self.view.session_data['ClassNames'].get(class_name)
 
@@ -232,14 +263,13 @@ class ObjcFlowgraph(FlowGraph):
                 (
                     MediumLevelILOperation.MLIL_CONST,
                     MediumLevelILOperation.MLIL_CONST_PTR
-                )
-        ):
+                    )
+                ):
             selector = selector.constant
             selector_value = self.view.get_ascii_string_at(selector, 2).value
         elif selector.operation == MediumLevelILOperation.MLIL_VAR:
             selector_value = selector.src
 
-        id_ = receiver.src
 
         id_, method_string, method_ptr = lookup_selector(
             i, id_, class_name, class_, selector_value
@@ -265,12 +295,12 @@ class ObjcFlowgraph(FlowGraph):
                             params[p].src.name,
                             params[p].src.identifier
                         )
-                    )                   
+                    )
                 else:
                     token = None
                     data_var = self.view.get_data_var_at(params[p].constant)
                     log_debug(f"params[{p}] is {data_var}")
-                    if (data_var is not None and 
+                    if (data_var is not None and
                             data_var.type.named_type_reference is not None and
                             data_var.type.named_type_reference.name == 'CFString'):
                         token = self.get_cfstring_token(data_var.address)
@@ -305,7 +335,8 @@ class ObjcFlowgraph(FlowGraph):
                                 InstructionTextTokenType.LocalVariableToken,
                                 str(
                                     self.mlil.source_function.parameter_vars[p+params_start]),
-                                self.mlil.source_function.parameter_vars[p+params_start].identifier
+                                self.mlil.source_function.parameter_vars[p +
+                                                                         params_start].identifier
                             )
 
                         method_params[p] = (
@@ -362,9 +393,10 @@ class ObjcFlowgraph(FlowGraph):
                 InstructionTextToken(
                     InstructionTextTokenType.LocalVariableToken if isinstance(
                         id_, Variable) else InstructionTextTokenType.ImportToken,
-                    id_.name if isinstance(id_, Variable) else id_,
+                    id_.name 
+                    if isinstance(id_, Variable) else id_,
                     id_.identifier if isinstance(id_, Variable) else 0
-                )
+                ) if class_name != 'CFString' else self.get_cfstring_token(id_)
             )
         else:
             call_line.tokens.append(
@@ -517,6 +549,13 @@ class ObjcFlowgraph(FlowGraph):
             ),
             "little" if self.view.endianness == Endianness.LittleEndian else "big"
         )
+        size = int.from_bytes(
+            self.view.read(
+                cfstring_address + CFString.structure['length'].offset,
+                self.view.address_size
+            ),
+            "little" if self.view.endianness == Endianness.LittleEndian else "big"
+        )
 
         log_debug(f"buffer_ptr is {buffer_ptr}")
 
@@ -525,7 +564,7 @@ class ObjcFlowgraph(FlowGraph):
         if buffer is not None:
             buffer = buffer.value
         else:
-            return
+            buffer = self.view.read(buffer_ptr, size * 2)
 
         return InstructionTextToken(
             InstructionTextTokenType.StringToken,

@@ -44,19 +44,19 @@ class Class:
             members['isa'],
             view
         )
+        new_class.isa = isa
 
         superclass = Class.from_address(
             members['superclass'],
             view
         )
+        new_class.superclass = superclass
 
         vtable = ClassRO.from_address(
             members['vtable'],
-            view
+            view,
+            new_class.is_meta
         )
-
-        new_class.isa = isa
-        new_class.superclass = superclass
         new_class.vtable = vtable
 
         class_t = Type.named_type_from_type(
@@ -150,7 +150,7 @@ class ClassRO:
     baseProperties: PropertyList
 
     @classmethod
-    def from_address(cls, address: int, view: BinaryView):
+    def from_address(cls, address: int, view: BinaryView, is_meta=False):
         from .protocol_t import ProtocolList
         if address == 0:
             return None
@@ -196,7 +196,7 @@ class ClassRO:
         )
 
         members['baseMethods'] = MethodList.from_address(
-            members['baseMethods'], members['name'], view
+            members['baseMethods'], members['name'], view, is_meta
         )
 
         members['baseProtocols'] = ProtocolList.from_address(

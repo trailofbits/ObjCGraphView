@@ -186,18 +186,73 @@ def _get_structure_members(address: int, t: Type, view: BinaryView) -> dict:
         for m in t.structure.members
     }
 
+def _parse_structure(type_string: str, view: BinaryView) -> Type:
+    type_name = ''.join(
+        takewhile(lambda i: i != '=', type_string)
+    )
 
-def _parse_function_type(type_string: str, self_name: str, view: BinaryView) -> Type:
+    type_string = type_string[len(type_name)+1:]
+
+    fields = []
+    while type_string:
+        if type_string[0] == '{':
+            field_type, type_string = _parse_structure(type_string[1:], view)
+            fields.append(field_type)
+
+        elif type_string[0] == '}':
+            type_string = type_string[1:]
+            break
+
+        elif type_string[0] == '[':
+            array_size = ''.join(takewhile(str.isdigit, type_string[1:]))
+            array_type = ''.join(
+                takewhile(lambda i: i != ']', type_string[1:])
+            )
+            type_string = type_string[len(array_size)+len(array_type)+2:]
+
+            fields.append(
+                Type.array(_lookup_type(array_type, view), int(array_size))
+            )
+
+        elif type_string[0] == ']':
+            type_string = type_string[1:]
+            continue
+
+        elif _lookup_type(type_string[0], view):
+            fields.append(_lookup_type(type_string[0], view))
+            type_string = type_string[1:]
+
+        else:
+            log_debug(f"Not sure what is going on with this type: {type_string!r}")
+            raise NotImplementedError(f"{type_string!r}")
+
+    parsed_struct = Structure()
+
+    for field in fields:
+        parsed_struct.append(field)
+
+    log_debug(f"Created {type_name}={parsed_struct}")
+        
+    view.define_user_type(type_name, Type.structure_type(parsed_struct))
+
+    return (
+        Type.named_type_from_type(
+            type_name,
+            view.types.get(type_name)
+        ),
+        type_string
+    )
+
+def _parse_function_type(type_string: str, self_name: str, view: BinaryView, is_class=False) -> Type:
+    log_debug(f'_parse_function_type {type_string}')
     ret_type_str = type_string[0]
 
-    # TODO: this clearly won't work. Need to do much better parsing of
-    # complex types.
-    if ret_type_str in '[{(':
-        ret_type_str += ''.join(
-            takewhile(lambda i: not str.isdigit(i), type_string)
-        )
-
-    type_string = type_string[len(ret_type_str):]
+    # Handle structures defined in the function types
+    if ret_type_str == '{':
+        ret_type, type_string = _parse_structure(type_string[1:], view)
+    else:
+        ret_type = _lookup_type(ret_type_str, view)
+        type_string = type_string[1:]
 
     stack_size = ''.join(takewhile(str.isdigit, type_string))
     type_string = type_string[len(stack_size):]
@@ -205,27 +260,68 @@ def _parse_function_type(type_string: str, self_name: str, view: BinaryView) -> 
 
     args = []
     while type_string:
-        # TODO: does not handle structures passed by value on stack
-        arg_type = ''.join(
-            takewhile(lambda i: not str.isdigit(i), type_string))
-        type_string = type_string[len(arg_type):]
+        if type_string[0] == '{':
+            arg_type, type_string = _parse_structure(type_string[1:], view)
+            args.append(Type.pointer(view.arch, arg_type))
+        else:
+            arg_type = ''.join(
+                takewhile(lambda i: not str.isdigit(i), type_string))
+            type_string = type_string[len(arg_type):]
+            args.append(_lookup_type(arg_type, view))
 
         arg_stack_offset = ''.join(takewhile(str.isdigit, type_string))
         type_string = type_string[len(arg_stack_offset):]
 
-        args.append(_lookup_type(arg_type, view))
-
-    # we know that the first parameter is the 'self' parameter
-    args[0] = FunctionParameter(
-        Type.pointer(
-            view.arch,
-            Type.named_type_from_type(
-                self_name, view.types[self_name]
+    # we know that the first parameter is the 'self' parameter if it's not
+    # an objc_msgSend_stret or objc_msgSendSuper_stret. Otherwise it's the
+    # second one.
+    if ret_type.type_class == TypeClass.NamedTypeReferenceClass:
+        log_debug(f'return value is {ret_type}')
+        ret_type = Type.pointer(view.arch, ret_type)
+        args.insert(
+            0, 
+            FunctionParameter(
+                ret_type,
+                'ret_value'
             )
-        ),
-        'self'
-    )
+        )
 
-    function_type = Type.function(_lookup_type(ret_type_str, view), args)
+        if len(args) < 2:
+            args.append(None)
+
+        args[1] = FunctionParameter(
+            Type.pointer(
+                view.arch,
+                (
+                    Type.named_type_from_type(
+                        self_name, view.types[self_name]
+                    )
+                    if not is_class
+                    else Type.named_type_from_type(
+                        'class_t', view.types['class_t']
+                    )
+                )
+
+            ),
+            'self'
+        )
+    else:
+        args[0] = FunctionParameter(
+            Type.pointer(
+                view.arch,
+                (
+                    Type.named_type_from_type(
+                        self_name, view.types[self_name]
+                    )
+                    if not is_class
+                    else Type.named_type_from_type(
+                        'class_t', view.types['class_t']
+                    )
+                )
+            ),
+            'self'
+        )
+
+    function_type = Type.function(ret_type, args)
 
     return function_type

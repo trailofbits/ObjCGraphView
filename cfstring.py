@@ -25,6 +25,8 @@ struct CFString
 };
 '''
 
+_wchar_definition = 'typedef wchar16 wchar;'
+
 
 def define_cfstrings_plugin(view: BinaryView):
     log_debug("define_cfstrings_plugin")
@@ -38,6 +40,10 @@ def define_cfstrings_plugin(view: BinaryView):
         ).types['CFString']
 
         view.define_user_type('CFString', cfstring_type)
+
+        wchar_type = view.platform.parse_types_from_source(
+            _wchar_definition
+        ).types['wchar']
 
     cfstring = Type.named_type_from_type('CFString', cfstring_type)
 
@@ -61,7 +67,7 @@ def define_cfstrings_plugin(view: BinaryView):
         ) + 1
 
         if view.get_sections_at(string_pointer)[0].name == '__ustring':
-            char_type = Type.int(2, True, 'wchar')
+            char_type = wchar_type
         else:
             char_type = Type.char()
 
@@ -70,12 +76,14 @@ def define_cfstrings_plugin(view: BinaryView):
             Type.array(char_type, string_length)
         )
 
+
 _cfstring_allocator_properties = {
     0: 'inline',
     1: 'noinline,default',
     2: "noinline,nofree",
     3: 'noinline,custom'
 }
+
 
 class CFStringDataRenderer(DataRenderer):
     def __init__(self):
@@ -136,7 +144,7 @@ class CFStringDataRenderer(DataRenderer):
 
             string = string.value
         else:
-            string = view.read(buffer, length * 2).decode('utf-16')
+            string = view.read(buffer, length * 2)
 
         if symbol is None:
             name = f'data_{addr:x}'
