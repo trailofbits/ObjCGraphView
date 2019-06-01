@@ -2,7 +2,7 @@
 
 ## Installation
 ```sh
-git clone https://github.com/joshwatson/objective-by-the-sea
+git clone https://github.com/trailofbits/ObjCGraphView
 ln -s `pwd`/objective-by-the-sea ~/Library/Application\ Support/Binary\ Ninja/plugins/
 ```
 
