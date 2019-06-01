@@ -1,4 +1,4 @@
-# Unnamed Objective-C Binary Ninja plugin
+# ObjCGraphView: An Objective-C Binary Ninja plugin
 
 ## Installation
 ```sh
