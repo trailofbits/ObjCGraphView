@@ -3,7 +3,7 @@
 ## Installation
 ```sh
 git clone https://github.com/trailofbits/ObjCGraphView
-ln -s `pwd`/objective-by-the-sea ~/Library/Application\ Support/Binary\ Ninja/plugins/
+ln -s `pwd`/ObjCGraphView ~/Library/Application\ Support/Binary\ Ninja/plugins/
 ```
 
 ## Using
