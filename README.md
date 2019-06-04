@@ -1,5 +1,8 @@
 # ObjCGraphView: An Objective-C Binary Ninja plugin
 
+## Requirements
+This plugin requires Python 3.7+, and Binary Ninja 1.1.1706-dev or newer.
+
 ## Installation
 ```sh
 git clone https://github.com/trailofbits/ObjCGraphView
