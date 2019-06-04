@@ -492,7 +492,8 @@ class ObjcFlowgraph(FlowGraph):
             )
         )
 
-        call_line.tokens += i.params[0].tokens
+        if i.params:
+            call_line.tokens += i.params[0].tokens
 
         call_line.tokens.append(
             InstructionTextToken(
