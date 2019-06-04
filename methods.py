@@ -472,4 +472,4 @@ def _add_xrefs(view: BinaryView):
                     return
 
                 if call_mlil is not None:
-                    xref.function.set_user_xref(call_mlil.address, function.start)
+                    xref.function.add_user_code_ref(call_mlil.address, function.start)
