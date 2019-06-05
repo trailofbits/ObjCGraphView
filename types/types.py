@@ -173,7 +173,7 @@ def _lookup_type(type_string: str, view: BinaryView):
     elif type_string.startswith('#'):
         return Type.pointer(view.arch, Type.void())
     elif type_string == ':':
-        return view.types['SEL']
+        return view.get_type_by_name('SEL')
     else:
         return Type.pointer(view.arch, Type.void())
 
@@ -298,7 +298,7 @@ def _parse_function_type(type_string: str, self_name: str, view: BinaryView, is_
                     )
                     if not is_class
                     else Type.named_type_from_type(
-                        'class_t', view.types['class_t']
+                        'class_t', view.get_type_by_name('class_t')
                     )
                 )
 
@@ -315,7 +315,7 @@ def _parse_function_type(type_string: str, self_name: str, view: BinaryView, is_
                     )
                     if not is_class
                     else Type.named_type_from_type(
-                        'class_t', view.types['class_t']
+                        'class_t', view.get_type_by_name('class_t')
                     )
                 )
             ),

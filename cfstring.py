@@ -33,7 +33,7 @@ def define_cfstrings_plugin(view: BinaryView):
 
     from_bytes = _get_from_bytes(view)
 
-    cfstring_type = view.types.get('CFString')
+    cfstring_type = view.get_type_by_name('CFString')
     if cfstring_type is None:
         cfstring_type = view.platform.parse_types_from_source(
             _cfstring_definition
@@ -47,7 +47,10 @@ def define_cfstrings_plugin(view: BinaryView):
 
     cfstring = Type.named_type_from_type('CFString', cfstring_type)
 
-    __cfstring = view.sections['__cfstring']
+    __cfstring = view.get_section_by_name('__cfstring')
+
+    if __cfstring is None:
+        return
 
     buffer = cfstring_type.structure['buffer']
     length = cfstring_type.structure['length']
@@ -66,7 +69,12 @@ def define_cfstrings_plugin(view: BinaryView):
             view.read(addr + length.offset, length.type.width),
         ) + 1
 
-        if view.get_sections_at(string_pointer)[0].name == '__ustring':
+        string_section = view.get_sections_at(string_pointer)
+
+        if not string_section:
+            return
+
+        if string_section[0].name == '__ustring':
             char_type = wchar_type
         else:
             char_type = Type.char()
@@ -97,13 +105,13 @@ class CFStringDataRenderer(DataRenderer):
 
         symbol: Symbol = view.get_symbol_at(addr)
 
-        cfstring = view.types.get('CFString')
+        cfstring: Type = view.get_type_by_name('CFString')
 
         if cfstring is None:
             log_debug('CFString is not defined; how did we even get here?')
             return [DisassemblyTextLine(prefix, addr)]
 
-        cfstring = cfstring.structure
+        cfstring: Structure = cfstring.structure
 
         buffer = from_bytes(
             view.read(addr + cfstring['buffer'].offset, view.address_size)

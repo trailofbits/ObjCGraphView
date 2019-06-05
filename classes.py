@@ -14,7 +14,7 @@ def define_classes_plugin(view):
     view.session_data['ClassROList'] = {}
     view.session_data['Protocols'] = {}
 
-    class_t = Type.named_type_from_type('class_t', view.types.get('class_t'))
+    class_t = Type.named_type_from_type('class_t', view.get_type_by_name('class_t'))
 
     if class_t is None:
         log_error("class_t is not defined!")
@@ -64,13 +64,13 @@ def _define_classes(view: BinaryView, class_t: Type):
 
 
 def _define_protocols(view: BinaryView):
-    __objc_protorefs = view.sections.get('__objc_protorefs')
+    __objc_protorefs = view.get_section_by_name('__objc_protorefs')
 
     if __objc_protorefs is None:
         return
 
     protocol_t = Type.named_type_from_type(
-        'protocol_t', view.types['protocol_t']
+        'protocol_t', view.get_type_by_name('protocol_t')
     )
 
     for address in range(__objc_protorefs.start, __objc_protorefs.end, view.address_size):
@@ -91,11 +91,20 @@ def _define_categories(view: BinaryView):
         return
 
     category_t = Type.named_type_from_type(
-        'category_t', view.types['category_t']
+        'category_t', view.get_type_by_name('category_t')
     )
 
-    for address in range(__objc_catlist.start, __objc_catlist.end, view.address_size):
-        view.define_user_data_var(address, Type.pointer(view.arch, category_t))
+    if category_t is None:
+        return
+
+    start = __objc_catlist.start
+    end = __objc_catlist.end
+    step = view.address_size
+    for address in range(start, end, step):
+        view.define_user_data_var(
+            address,
+            Type.pointer(view.arch, category_t)
+        )
 
         category_ptr = int.from_bytes(
             view.read(address, view.address_size),

@@ -33,7 +33,11 @@ class Category:
 
         from .class_t import Class, ClassRO
 
-        category_t_type = view.types['category_t']
+        category_t_type = view.get_type_by_name('category_t')
+
+        if category_t_type is None:
+            return
+
         category_t = Type.named_type_from_type(
             'category_t', category_t_type
         )

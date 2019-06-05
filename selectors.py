@@ -36,7 +36,7 @@ def _define_selectors(view: BinaryView):
     if __objc_selrefs is None:
         raise KeyError('This binary has no __objc_selrefs section')
 
-    SEL = view.types.get('SEL')
+    SEL = view.get_type_by_name('SEL')
     if SEL is None:
         raise TypeError('The SEL type is not defined!')
 

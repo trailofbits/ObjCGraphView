@@ -26,7 +26,11 @@ class Property:
         if address == 0:
             return None
 
-        property_t_type = view.types['property_t']
+        property_t_type = view.get_type_by_name('property_t')
+
+        if property_t_type is None:
+            return
+
         property_t = Type.named_type_from_type(
             'property_t', property_t_type
         )
@@ -63,13 +67,13 @@ class PropertyList:
         if address == 0:
             return None
 
-        property_list_t_type = view.types['property_list_t']
+        property_list_t_type = view.get_type_by_name('property_list_t')
 
         property_list_t = Type.named_type_from_type(
             'property_list_t', property_list_t_type
         )
 
-        property_t = view.types['property_t']
+        property_t = view.get_type_by_name('property_t')
 
         if view.get_data_var_at(address) is None:
             view.define_user_data_var(address, property_list_t)

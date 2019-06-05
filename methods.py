@@ -367,6 +367,9 @@ def _propagate_stret_types(view: BinaryView):
 
         log_debug(f'selector_ptr is {selector_ptr.value.value:x}')
 
+        if not view.is_offset_readable(selector_ptr.value.value):
+            continue
+
         selector = view.get_ascii_string_at(selector_ptr.value.value, 1)
 
         if selector is None:
@@ -424,7 +427,7 @@ def _propagate_stret_types(view: BinaryView):
 
 def _add_xrefs(view: BinaryView):
     log_debug('_add_xrefs')
-    method_t = view.types.get('method_t')
+    method_t = view.get_type_by_name('method_t')
     if method_t is None:
         return
 

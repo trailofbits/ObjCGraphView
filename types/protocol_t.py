@@ -30,13 +30,13 @@ class ProtocolList:
 
         from_bytes = get_from_bytes(view)
 
-        protocol_list_t_type = view.types['protocol_list_t']
+        protocol_list_t_type = view.get_type_by_name('protocol_list_t')
 
         protocol_list_t = Type.named_type_from_type(
             'protocol_list_t', protocol_list_t_type
         )
 
-        protocol_t = view.types['protocol_t']
+        protocol_t = view.get_type_by_name('protocol_t')
 
         members = get_structure_members(address, protocol_list_t_type, view)
 
@@ -96,7 +96,7 @@ class Protocol:
         )
 
         protocol_t = Type.named_type_from_type(
-            'protocol_t', view.types['protocol_t']
+            'protocol_t', view.get_type_by_name('protocol_t')
         )
 
         if not view.get_data_var_at(address):
@@ -107,7 +107,7 @@ class Protocol:
 
         members = {
             m.name: from_bytes(view.read(address + m.offset, m.type.width))
-            for m in view.types['protocol_t'].structure.members
+            for m in view.get_type_by_name('protocol_t').structure.members
         }
 
         members['isa'] = Class.from_address(members['isa'], view)

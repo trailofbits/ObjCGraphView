@@ -28,13 +28,13 @@ class IvarList:
 
         from_bytes = get_from_bytes(view)
 
-        ivar_list_t_type = view.types['ivar_list_t']
+        ivar_list_t_type = view.get_type_by_name('ivar_list_t')
 
         ivar_list_t = Type.named_type_from_type(
             'ivar_list_t', ivar_list_t_type
         )
 
-        ivar_t = view.types['ivar_t']
+        ivar_t = view.get_type_by_name('ivar_t')
 
         members = get_structure_members(address, ivar_list_t_type, view)
 
@@ -67,7 +67,7 @@ class Ivar:
 
         from_bytes = get_from_bytes(view)
 
-        ivar_t_type = view.types['ivar_t']
+        ivar_t_type = view.get_type_by_name('ivar_t')
         ivar_t = Type.named_type_from_type(
             'ivar_t', ivar_t_type
         )

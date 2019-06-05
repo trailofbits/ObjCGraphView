@@ -38,7 +38,7 @@ class Class:
 
         from_bytes = get_from_bytes(view)
 
-        members = get_structure_members(address, view.types['class_t'], view)
+        members = get_structure_members(address, view.get_type_by_name('class_t'), view)
 
         isa = Class.from_address(
             members['isa'],
@@ -60,7 +60,7 @@ class Class:
         new_class.vtable = vtable
 
         class_t = Type.named_type_from_type(
-            'class_t', view.types['class_t'])
+            'class_t', view.get_type_by_name('class_t'))
 
         view.define_user_data_var(address, class_t)
 
@@ -168,7 +168,7 @@ class ClassRO:
         )
 
         class_ro_t = Type.named_type_from_type(
-            'class_ro_t', view.types['class_ro_t']
+            'class_ro_t', view.get_type_by_name('class_ro_t')
         )
 
         if view.get_data_var_at(address) is None:
@@ -178,7 +178,7 @@ class ClassRO:
 
         members = {
             m.name: from_bytes(view.read(address + m.offset, m.type.width))
-            for m in view.types['class_ro_t'].structure.members
+            for m in view.get_type_by_name('class_ro_t').structure.members
         }
 
         members['name'] = (

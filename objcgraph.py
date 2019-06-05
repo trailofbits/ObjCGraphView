@@ -110,7 +110,10 @@ class ObjcFlowgraph(FlowGraph):
         func = self.function
         mlil = self.mlil
 
-        method_t = self.view.types['method_t']
+        method_t = self.view.get_type_by_name('method_t')
+
+        if method_t is None:
+            return
 
         settings = DisassemblySettings()
         settings.set_option('ShowVariableTypesWhenAssigned')
@@ -457,7 +460,12 @@ class ObjcFlowgraph(FlowGraph):
         )
 
     def render_retain(self, i, il_lines):
-        objc_retain = self.view.symbols['_objc_retain@PLT'].address
+        objc_retain_symbol = self.view.get_symbol_by_name('_objc_retain@PLT')
+
+        if objc_retain_symbol is None:
+            return
+
+        objc_retain = objc_retain_symbol.address
 
         call_line = next(
             line for line in il_lines
@@ -542,7 +550,11 @@ class ObjcFlowgraph(FlowGraph):
         )
 
     def get_cfstring_token(self, cfstring_address):
-        CFString = self.view.types['CFString']
+        CFString = self.view.get_type_by_name('CFString')
+
+        if CFString is None:
+            return
+
         buffer_ptr = int.from_bytes(
             self.view.read(
                 cfstring_address + CFString.structure['buffer'].offset,
@@ -623,8 +635,8 @@ class ObjcFlowGraphViewType(ViewType):
         super().__init__("Objc Graph", "Objective-C Graph View")
 
     def getPriority(self, data, filename):
-        if data.executable and 'class_t' in data.types:
-                        # Use low priority so that this view is not picked by default
+        if data.executable and data.get_type_by_name('class_t') is not None:
+            # Use low priority so that this view is not picked by default
             return 1
         return 0
 

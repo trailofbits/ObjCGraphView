@@ -27,13 +27,13 @@ class MethodList:
         if address == 0:
             return None
 
-        method_list_t_type = view.types['method_list_t']
+        method_list_t_type = view.get_type_by_name('method_list_t')
 
         method_list_t = Type.named_type_from_type(
             'method_list_t', method_list_t_type
         )
 
-        method_t = view.types['method_t']
+        method_t = view.get_type_by_name('method_t')
 
         if view.get_data_var_at(address) is None:
             view.define_user_data_var(address, method_list_t)
@@ -69,7 +69,7 @@ class Method:
                 self_type, Type.structure_type(Structure())
             )
 
-        method_t_type = view.types['method_t']
+        method_t_type = view.get_type_by_name('method_t')
         method_t = Type.named_type_from_type(
             'method_t', method_t_type
         )
