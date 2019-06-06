@@ -86,8 +86,11 @@ class Category:
         )
 
         if members['cls'] is not None and not members['cls'].methods:
-            members['cls']._methods = members['instanceMethods'].methods
-        elif members['cls'] is not None:
+            if members['instanceMethods'] is None:
+                members['cls']._methods = {}
+            else:
+                members['cls']._methods = members['instanceMethods'].methods
+        elif members['cls'] is not None and members['instanceMethods']:
             members['cls']._methods.update(members['instanceMethods'].methods)
 
         members['protocols'] = ProtocolList.from_address(
