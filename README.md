@@ -1,5 +1,7 @@
 # ObjCGraphView: An Objective-C Binary Ninja plugin
 
+![example image](demo/calculator.png)
+
 ## Requirements
 This plugin requires Python 3.7+, and Binary Ninja 1.1.1706-dev or newer.
 
